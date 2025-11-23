@@ -1,0 +1,14 @@
+syntax = "proto3";
+package api;
+option go_package = "./api-go;api";
+
+message Trace  {
+  string ID = 1;
+  int64 Spans = 2 ;
+  int64 Errors = 3 ;
+  int64 Data = 4 ;
+  int64 Length = 5 ;
+  int64 Duration = 6 ;
+  double Start = 7 ;
+  double End = 8 ;
+}

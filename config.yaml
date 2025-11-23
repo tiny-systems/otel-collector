@@ -1,0 +1,3 @@
+debug: true
+
+grpc_listen_address: :2345

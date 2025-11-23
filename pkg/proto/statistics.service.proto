@@ -1,0 +1,9 @@
+syntax = "proto3";
+package api;
+option go_package = "./api-go;api";
+import "statistics.messages.proto";
+
+service StatisticsService {
+  rpc GetStream(StatisticsStreamRequest) returns (stream StatisticsStreamResponse);
+  rpc GetTraces(StatisticsGetTracesRequest) returns (StatisticsGetTracesResponse);
+}

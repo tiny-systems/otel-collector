@@ -1,0 +1,42 @@
+syntax = "proto3";
+package api;
+option go_package = "./api-go;api";
+
+import "trace.proto";
+
+message StatisticsStreamRequest {
+  string FlowID = 1;
+  string ProjectID = 2;
+}
+
+message StatisticsStreamResponse {
+  repeated StatsEvent Events = 1;
+}
+
+message StatisticsGetTracesRequest {
+  string FlowID = 1;
+  int64 Start = 2;
+  int64 End = 3;
+  int64 Offset = 4;
+  string ProjectID = 5;
+}
+
+message StatisticsGetTracesResponse {
+  repeated Trace Traces = 1;
+  int64 Total = 2;
+  int64 Offset = 3;
+}
+
+message StatsEvent {
+  int32 Index = 1;
+  float Value = 2;
+  int64 Datetime = 3;
+  Dataset Dataset = 4;
+}
+
+message Dataset {
+  string Label = 1;
+  string BackgroundColor =  2;
+  string BorderColor = 3;
+}
+
