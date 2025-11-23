@@ -1,27 +1,19 @@
 package statistics
 
-import "github.com/tiny-systems/otel-server/pkg/api-go"
+import (
+	"github.com/tiny-systems/otel-server/internal/services/opentelemetry/trace"
+	"github.com/tiny-systems/otel-server/pkg/api-go"
+)
 
-type Trace struct {
-	ID       string
-	Spans    int64
-	Errors   int64
-	Data     int64
-	Length   int64
-	Duration int64
-	Start    float64
-	End      float64
-}
-
-func trace2Api(trace *Trace) *api.Trace {
+func trace2Api(trace *trace.Entry) *api.Trace {
 	return &api.Trace{
-		ID:       trace.ID,
-		Spans:    trace.Spans,
-		Errors:   trace.Errors,
-		Data:     trace.Data,
-		Length:   trace.Length,
-		Duration: trace.Duration,
-		Start:    trace.Start,
-		End:      trace.End,
+		ID:       trace.TraceID,
+		Spans:    int64(len(trace.Spans)),
+		Errors:   int64(trace.ErrorsCount),
+		Data:     int64(trace.DataCount),
+		Length:   int64(trace.DataLength),
+		Duration: int64(trace.DurationNs),
+		Start:    int64(trace.StartTime.Nanosecond()),
+		End:      int64(trace.EndTime.Nanosecond()),
 	}
 }

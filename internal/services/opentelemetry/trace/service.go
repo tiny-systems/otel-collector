@@ -3,10 +3,9 @@ package trace
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
+	"github.com/tiny-systems/otel-server/internal/services/opentelemetry"
 	"github.com/tiny-systems/otel-server/internal/services/opentelemetry/metrics"
 	"github.com/tiny-systems/otel-server/pkg/attrkey"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -24,16 +23,7 @@ const (
 	projectIDSpanAttr = "projectID"
 )
 
-const (
-	MetricTraceCount     = "tiny_trace_count"
-	MetricSpanCount      = "tiny_span_count"
-	MetricSpanErrorCount = "tiny_span_error_count"
-	MetricSpanDataCount  = "tiny_span_data_count"
-)
-
-var ErrTraceNotFound = fmt.Errorf("trace not found")
-
-// Stat holds statistics for a trace (from your original code)
+// Stat holds statistics for a trace
 type Stat struct {
 	DataCounter  int
 	ErrorCounter int
@@ -47,16 +37,16 @@ type Stat struct {
 }
 
 func (s Stat) getDataPoints() []*metrics.Datapoint {
-	traces := s.newDatapoint(MetricTraceCount)
+	traces := s.newDatapoint(opentelemetry.MetricTraceCount)
 	traces.Sum = 1
 
-	spans := s.newDatapoint(MetricSpanCount)
+	spans := s.newDatapoint(opentelemetry.MetricSpanCount)
 	spans.Sum = float64(len(s.spans))
 
-	errors := s.newDatapoint(MetricSpanErrorCount)
+	errors := s.newDatapoint(opentelemetry.MetricSpanErrorCount)
 	errors.Sum = float64(s.ErrorCounter)
 
-	data := s.newDatapoint(MetricSpanDataCount)
+	data := s.newDatapoint(opentelemetry.MetricSpanDataCount)
 	data.Sum = float64(s.DataCounter)
 
 	return []*metrics.Datapoint{traces, spans, errors, data}
@@ -96,22 +86,6 @@ type Entry struct {
 func (te *Entry) EstimateSize() int {
 	// Rough estimate: each span ~2KB + metadata ~500 bytes
 	return (len(te.Spans) * 2048) + 500
-}
-
-// Storage stores traces in memory with LRU eviction based on memory limit
-type Storage struct {
-	traces         map[string]*Entry
-	maxMemoryBytes int64
-	mu             sync.RWMutex
-
-	// Indexes for fast lookups
-	projectIndex map[string][]string // projectID -> []traceID
-	flowIndex    map[string][]string // flowID -> []traceID
-
-	// LRU tracking
-	accessOrder []string       // traceIDs in access order (oldest first)
-	accessMap   map[string]int // traceID -> index in accessOrder
-	accessMu    sync.Mutex
 }
 
 // Service implementation with memory-limited storage
@@ -228,102 +202,4 @@ func (s *Service) Export(ctx context.Context, request *collectortracepb.ExportTr
 	}
 
 	return &collectortracepb.ExportTraceServiceResponse{}, nil
-}
-
-// GetTrace retrieves a specific trace by ID
-func (s *Service) GetTrace(traceID string) (*Entry, error) {
-	s.storage.mu.RLock()
-	entry, exists := s.storage.traces[traceID]
-	s.storage.mu.RUnlock()
-
-	if !exists {
-		return nil, ErrTraceNotFound
-	}
-
-	// Track access for LRU
-	s.storage.trackAccess(traceID)
-	return entry, nil
-}
-
-// ListTracesByProject returns recent traces for a project
-func (s *Service) ListTracesByProject(projectID string, limit int) []*Entry {
-	s.storage.mu.RLock()
-	traceIDs := s.storage.projectIndex[projectID]
-
-	result := make([]*Entry, 0, limit)
-	// Get most recent traces (from end of list)
-	for i := len(traceIDs) - 1; i >= 0 && len(result) < limit; i-- {
-		if entry, exists := s.storage.traces[traceIDs[i]]; exists {
-			result = append(result, entry)
-		}
-	}
-	s.storage.mu.RUnlock()
-
-	return result
-}
-
-// ListTracesByFlow returns recent traces for a flow
-func (s *Service) ListTracesByFlow(flowID string, limit int) []*Entry {
-	s.storage.mu.RLock()
-	traceIDs := s.storage.flowIndex[flowID]
-
-	result := make([]*Entry, 0, limit)
-	for i := len(traceIDs) - 1; i >= 0 && len(result) < limit; i-- {
-		if entry, exists := s.storage.traces[traceIDs[i]]; exists {
-			result = append(result, entry)
-		}
-	}
-	s.storage.mu.RUnlock()
-
-	return result
-}
-
-// GetSpans returns all spans for a trace
-func (s *Service) GetSpans(traceID string) ([]*v1.Span, error) {
-	entry, err := s.GetTrace(traceID)
-	if err != nil {
-		return nil, err
-	}
-	return entry.Spans, nil
-}
-
-// GetStats returns storage statistics
-func (s *Service) GetStats() StorageStats {
-	s.storage.mu.RLock()
-	defer s.storage.mu.RUnlock()
-
-	var totalSpans int
-	var oldestTime time.Time
-
-	for _, entry := range s.storage.traces {
-		totalSpans += entry.SpansCount
-		if oldestTime.IsZero() || entry.CreatedAt.Before(oldestTime) {
-			oldestTime = entry.CreatedAt
-		}
-	}
-
-	oldestDataMinutes := 0
-	if !oldestTime.IsZero() {
-		oldestDataMinutes = int(time.Since(oldestTime).Minutes())
-	}
-
-	return StorageStats{
-		TracesCount:       len(s.storage.traces),
-		SpansCount:        totalSpans,
-		ProjectsCount:     len(s.storage.projectIndex),
-		FlowsCount:        len(s.storage.flowIndex),
-		MemoryUsageMB:     int(s.storage.getCurrentMemoryUsage() / 1024 / 1024),
-		MaxMemoryMB:       int(s.storage.maxMemoryBytes / 1024 / 1024),
-		OldestDataMinutes: oldestDataMinutes,
-	}
-}
-
-type StorageStats struct {
-	TracesCount       int
-	SpansCount        int
-	ProjectsCount     int
-	FlowsCount        int
-	MemoryUsageMB     int
-	MaxMemoryMB       int
-	OldestDataMinutes int
 }

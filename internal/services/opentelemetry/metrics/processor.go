@@ -4,11 +4,10 @@ import (
 	"context"
 	"github.com/rs/zerolog/log"
 	"reflect"
-	"runtime"
+	"sync"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
-	"go4.org/syncutil"
 	"golang.org/x/exp/slices"
 )
 
@@ -50,21 +49,37 @@ type DatapointProcessor struct {
 	dropAttrs map[string]struct{}
 
 	queue chan *Datapoint
-	gate  *syncutil.Gate
+
+	// Worker pool
+	workers   int
+	workerWg  sync.WaitGroup
+	workQueue chan []*Datapoint
 
 	c2d *CumToDeltaConv
 
 	handler Handler
+
+	// Realtime aggregator for streaming
+	realtimeAggregator *RealtimeAggregator
+
+	// Metrics
+	droppedPoints    int64
+	outOfOrderPoints int64
+	processedPoints  int64
+	mu               sync.Mutex
 }
 
 func NewDatapointProcessor(handler Handler) *DatapointProcessor {
+	workers := 4 // configurable
 
 	p := &DatapointProcessor{
-		batchSize: 100,
-		queue:     make(chan *Datapoint, 100000),
-		gate:      syncutil.NewGate(runtime.GOMAXPROCS(0)),
-		c2d:       NewCumToDeltaConv(100000),
-		handler:   handler,
+		batchSize:          100,
+		queue:              make(chan *Datapoint, 100000),
+		workers:            workers,
+		workQueue:          make(chan []*Datapoint, workers*2),
+		c2d:                NewCumToDeltaConv(100000),
+		handler:            handler,
+		realtimeAggregator: NewRealtimeAggregator(),
 	}
 
 	p.dropAttrs = map[string]struct{}{
@@ -72,14 +87,32 @@ func NewDatapointProcessor(handler Handler) *DatapointProcessor {
 		"telemetry_sdk_name":     {},
 		"telemetry_sdk_version":  {},
 	}
+
+	// Start worker pool
+	for i := 0; i < workers; i++ {
+		p.workerWg.Add(1)
+		go p.worker()
+	}
+
 	return p
+}
+
+func (p *DatapointProcessor) worker() {
+	defer p.workerWg.Done()
+
+	for datapoints := range p.workQueue {
+		p._processDataPoints(newDatapointContext(context.Background()), datapoints)
+	}
 }
 
 func (p *DatapointProcessor) AddDatapoint(_ context.Context, datapoint *Datapoint) {
 	select {
 	case p.queue <- datapoint:
 	default:
-		log.Error().Msgf("datapoint buffer is full (consider increasing metrics.buffer_size) %s", len(p.queue))
+		p.mu.Lock()
+		p.droppedPoints++
+		p.mu.Unlock()
+		log.Error().Msgf("datapoint buffer is full (consider increasing metrics.buffer_size) queue_len=%d", len(p.queue))
 	}
 }
 
@@ -124,36 +157,64 @@ loop:
 	if len(dataPoints) > 0 {
 		p.processDataPoints(ctx, dataPoints)
 	}
+
+	// Shutdown worker pool
+	close(p.workQueue)
+	p.workerWg.Wait()
 }
 
 func (p *DatapointProcessor) processDataPoints(ctx context.Context, src []*Datapoint) {
+	// Check context before processing
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
 
-	p.gate.Start()
 	dataPoints := make([]*Datapoint, len(src))
 	copy(dataPoints, src)
 
-	go func() {
-		defer p.gate.Done()
+	select {
+	case p.workQueue <- dataPoints:
+	default:
+		// If work queue is full, process synchronously to avoid dropping data
 		p._processDataPoints(newDatapointContext(ctx), dataPoints)
-	}()
+	}
 }
 
 func (p *DatapointProcessor) _processDataPoints(ctx *datapointContext, datapoints []*Datapoint) {
+	// Check context cancellation
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
 
 	for i := len(datapoints) - 1; i >= 0; i-- {
 		dp := datapoints[i]
 
 		p.initDatapoint(ctx, dp)
+
+		// Feed to realtime aggregator BEFORE cumToDelta conversion
+		// This ensures we capture the original cumulative values
+		p.realtimeAggregator.AddDatapoint(dp)
+
 		if !p.cumToDelta(ctx, dp) {
 			datapoints = append(datapoints[:i], datapoints[i+1:]...)
-			log.Warn().Msgf("droppped")
+			p.mu.Lock()
+			p.droppedPoints++
+			p.mu.Unlock()
 			continue
 		}
-
 	}
+
 	if len(datapoints) == 0 {
 		return
 	}
+
+	p.mu.Lock()
+	p.processedPoints += int64(len(datapoints))
+	p.mu.Unlock()
 
 	if err := p.handler(ctx, datapoints); err != nil {
 		log.Warn().Msgf("unable to handle datapoints: %v", err)
@@ -212,16 +273,40 @@ func (p *DatapointProcessor) convertNumberPoint(
 		StartTimeUnixNano: datapoint.StartTimeUnixNano,
 	}
 
-	prevPoint, ok := p.c2d.SwapPoint(key, point, datapoint.Time).(*NumberPoint)
-	if !ok {
+	prevPointAny := p.c2d.SwapPoint(key, point, datapoint.Time)
+	if prevPointAny == nil {
+		// First data point for this metric, cannot calculate delta
 		return false
 	}
 
+	prevPoint, ok := prevPointAny.(*NumberPoint)
+	if !ok {
+		log.Error().Msgf("type assertion failed for previous point, expected *NumberPoint, got %T", prevPointAny)
+		return false
+	}
+
+	// Calculate delta
 	if delta := point.Int - prevPoint.Int; delta > 0 {
 		datapoint.Sum = float64(delta)
+		return true
 	} else if delta := point.Double - prevPoint.Double; delta > 0 {
 		datapoint.Sum = delta
+		return true
 	}
+
+	// Delta is zero or negative (possible counter reset)
+	// Set sum to 0 and log if negative (counter reset)
+	if point.Int < prevPoint.Int || point.Double < prevPoint.Double {
+		log.Debug().
+			Str("metric", datapoint.Metric).
+			Uint64("attrs_hash", datapoint.AttrsHash).
+			Msg("counter reset detected (negative delta)")
+		p.mu.Lock()
+		p.outOfOrderPoints++
+		p.mu.Unlock()
+	}
+
+	datapoint.Sum = 0
 	return true
 }
 
@@ -230,6 +315,51 @@ type MetricKey struct {
 	FlowID    string
 	AttrHash  uint64
 	ProjectID string
+}
+
+// GetStats returns processing statistics
+func (p *DatapointProcessor) GetStats() ProcessorStats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	realtimeStats := p.realtimeAggregator.GetStats()
+
+	return ProcessorStats{
+		ProcessedPoints:  p.processedPoints,
+		DroppedPoints:    p.droppedPoints,
+		OutOfOrderPoints: p.outOfOrderPoints,
+		QueueSize:        len(p.queue),
+		CacheSize:        p.c2d.Len(),
+		RealtimeStats:    realtimeStats,
+	}
+}
+
+type ProcessorStats struct {
+	ProcessedPoints  int64
+	DroppedPoints    int64
+	OutOfOrderPoints int64
+	QueueSize        int
+	CacheSize        int
+	RealtimeStats    RealtimeStats
+}
+
+// Subscribe creates a subscription for realtime metrics
+// Returns a Subscriber that will receive aggregated metrics every 1 second
+// for the specified projectID and flowID combination
+func (p *DatapointProcessor) Subscribe(ctx context.Context, projectID, flowID string) *Subscriber {
+	return p.realtimeAggregator.Subscribe(ctx, projectID, flowID)
+}
+
+// Unsubscribe removes a subscription and closes its channel
+func (p *DatapointProcessor) Unsubscribe(sub *Subscriber) {
+	p.realtimeAggregator.Unsubscribe(sub)
+}
+
+// StartRealtimeAggregation starts the realtime aggregation flush loop
+// This must be called to enable realtime metric streaming
+// Should be called once when the processor is started
+func (p *DatapointProcessor) StartRealtimeAggregation(ctx context.Context) {
+	p.realtimeAggregator.FlushLoop(ctx)
 }
 
 //------------------------------------------------------------------------------

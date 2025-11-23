@@ -62,7 +62,7 @@ func (p *otlpProcessor) otlpGauge(
 			dest.Gauge = num.AsDouble
 			p.enqueue(ctx, dest)
 		default:
-			log.Error().Msgf("unknown data point value %T", dp.Value)
+			log.Error().Str("metric", metric.Name).Msgf("unknown data point value %T", dp.Value)
 		}
 	}
 }
@@ -130,7 +130,12 @@ func (p *otlpProcessor) otlpSum(
 			continue
 		}
 
+		// Handle cumulative counters
 		switch value := dp.Value.(type) {
+		case nil:
+			// Skip nil values for cumulative counters
+			log.Warn().Str("metric", metric.Name).Msg("nil value for cumulative counter, skipping")
+			continue
 		case *metricspb.NumberDataPoint_AsInt:
 			dest.StartTimeUnixNano = dp.StartTimeUnixNano
 			dest.CumPoint = &NumberPoint{
@@ -144,7 +149,7 @@ func (p *otlpProcessor) otlpSum(
 			}
 			p.enqueue(ctx, dest)
 		default:
-			log.Error().Msgf("unknown point value type type %T", dp.Value)
+			log.Error().Str("metric", metric.Name).Msgf("unknown point value type %T", dp.Value)
 		}
 	}
 }

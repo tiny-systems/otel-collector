@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"github.com/rs/zerolog/log"
 	"github.com/zyedidia/generic/cache"
 	"sync"
 	"time"
@@ -19,8 +20,6 @@ type DatapointValue struct {
 }
 
 type CumToDeltaConv struct {
-	cap int
-
 	mu    sync.Mutex
 	cache *cache.Cache[DatapointKey, *DatapointValue]
 }
@@ -45,6 +44,13 @@ func (c *CumToDeltaConv) SwapPoint(key DatapointKey, point any, time time.Time) 
 
 	if value, ok := c.cache.Get(key); ok {
 		if time.Before(value.Time) {
+			// Out-of-order data point detected
+			log.Debug().
+				Str("metric", key.Metric).
+				Uint64("attrs_hash", key.AttrsHash).
+				Time("current_time", value.Time).
+				Time("received_time", time).
+				Msg("out-of-order data point detected")
 			return nil
 		}
 

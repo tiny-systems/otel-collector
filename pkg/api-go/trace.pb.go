@@ -25,14 +25,14 @@ type Trace struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ID       string  `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
-	Spans    int64   `protobuf:"varint,2,opt,name=Spans,proto3" json:"Spans,omitempty"`
-	Errors   int64   `protobuf:"varint,3,opt,name=Errors,proto3" json:"Errors,omitempty"`
-	Data     int64   `protobuf:"varint,4,opt,name=Data,proto3" json:"Data,omitempty"`
-	Length   int64   `protobuf:"varint,5,opt,name=Length,proto3" json:"Length,omitempty"`
-	Duration int64   `protobuf:"varint,6,opt,name=Duration,proto3" json:"Duration,omitempty"`
-	Start    float64 `protobuf:"fixed64,7,opt,name=Start,proto3" json:"Start,omitempty"`
-	End      float64 `protobuf:"fixed64,8,opt,name=End,proto3" json:"End,omitempty"`
+	ID       string `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
+	Spans    int64  `protobuf:"varint,2,opt,name=Spans,proto3" json:"Spans,omitempty"`
+	Errors   int64  `protobuf:"varint,3,opt,name=Errors,proto3" json:"Errors,omitempty"`
+	Data     int64  `protobuf:"varint,4,opt,name=Data,proto3" json:"Data,omitempty"`
+	Length   int64  `protobuf:"varint,5,opt,name=Length,proto3" json:"Length,omitempty"`
+	Duration int64  `protobuf:"varint,6,opt,name=Duration,proto3" json:"Duration,omitempty"`
+	Start    int64  `protobuf:"varint,7,opt,name=Start,proto3" json:"Start,omitempty"`
+	End      int64  `protobuf:"varint,8,opt,name=End,proto3" json:"End,omitempty"`
 }
 
 func (x *Trace) Reset() {
@@ -109,14 +109,14 @@ func (x *Trace) GetDuration() int64 {
 	return 0
 }
 
-func (x *Trace) GetStart() float64 {
+func (x *Trace) GetStart() int64 {
 	if x != nil {
 		return x.Start
 	}
 	return 0
 }
 
-func (x *Trace) GetEnd() float64 {
+func (x *Trace) GetEnd() int64 {
 	if x != nil {
 		return x.End
 	}
@@ -137,8 +137,8 @@ var file_trace_proto_rawDesc = []byte{
 	0x4c, 0x65, 0x6e, 0x67, 0x74, 0x68, 0x12, 0x1a, 0x0a, 0x08, 0x44, 0x75, 0x72, 0x61, 0x74, 0x69,
 	0x6f, 0x6e, 0x18, 0x06, 0x20, 0x01, 0x28, 0x03, 0x52, 0x08, 0x44, 0x75, 0x72, 0x61, 0x74, 0x69,
 	0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05, 0x53, 0x74, 0x61, 0x72, 0x74, 0x18, 0x07, 0x20, 0x01, 0x28,
-	0x01, 0x52, 0x05, 0x53, 0x74, 0x61, 0x72, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x45, 0x6e, 0x64, 0x18,
-	0x08, 0x20, 0x01, 0x28, 0x01, 0x52, 0x03, 0x45, 0x6e, 0x64, 0x42, 0x0e, 0x5a, 0x0c, 0x2e, 0x2f,
+	0x03, 0x52, 0x05, 0x53, 0x74, 0x61, 0x72, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x45, 0x6e, 0x64, 0x18,
+	0x08, 0x20, 0x01, 0x28, 0x03, 0x52, 0x03, 0x45, 0x6e, 0x64, 0x42, 0x0e, 0x5a, 0x0c, 0x2e, 0x2f,
 	0x61, 0x70, 0x69, 0x2d, 0x67, 0x6f, 0x3b, 0x61, 0x70, 0x69, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
 	0x6f, 0x33,
 }

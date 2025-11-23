@@ -90,22 +90,28 @@ func (cb *CircularBuffer) GetOldestTime() time.Time {
 	return cb.data[cb.head].Time
 }
 
-// TimeSeriesBuffer manages multiple metrics with memory limits
+// fifoNode represents a node in the FIFO queue
+type fifoNode struct {
+	key       MetricKey
+	createdAt time.Time
+}
+
+// TimeSeriesBuffer manages multiple metrics with memory limits using FIFO eviction
 type TimeSeriesBuffer struct {
 	buffers map[MetricKey]*CircularBuffer
 	mu      sync.RWMutex
 
-	// Memory-based limits instead of time-based
+	// Memory-based limits
 	maxMemoryBytes  int64
 	pointsPerMetric int
 
-	// LRU tracking
-	accessOrder []MetricKey
-	accessMap   map[MetricKey]int // metricKey -> index in accessOrder
-	accessMu    sync.Mutex
+	// FIFO tracking - evicts oldest created metrics
+	fifoQueue []fifoNode
+	fifoIndex map[MetricKey]int // maps key to its index in fifoQueue
+	fifoMu    sync.Mutex
 }
 
-// NewTimeSeriesBuffer creates a buffer with memory-based limits
+// NewTimeSeriesBuffer creates a buffer with memory-based limits using FIFO eviction
 // maxMemoryMB: total memory budget in megabytes
 // pointsPerMetric: how many points to keep per unique metric
 func NewTimeSeriesBuffer(maxMemoryMB int, pointsPerMetric int) *TimeSeriesBuffer {
@@ -113,50 +119,53 @@ func NewTimeSeriesBuffer(maxMemoryMB int, pointsPerMetric int) *TimeSeriesBuffer
 		buffers:         make(map[MetricKey]*CircularBuffer),
 		maxMemoryBytes:  int64(maxMemoryMB) * 1024 * 1024,
 		pointsPerMetric: pointsPerMetric,
-		accessOrder:     make([]MetricKey, 0),
-		accessMap:       make(map[MetricKey]int),
+		fifoQueue:       make([]fifoNode, 0),
+		fifoIndex:       make(map[MetricKey]int),
 	}
 }
 
-func (tsb *TimeSeriesBuffer) trackAccess(key MetricKey) {
-	tsb.accessMu.Lock()
-	defer tsb.accessMu.Unlock()
+func (tsb *TimeSeriesBuffer) addToFIFO(key MetricKey) {
+	tsb.fifoMu.Lock()
+	defer tsb.fifoMu.Unlock()
 
-	// Remove from current position if exists
-	if idx, exists := tsb.accessMap[key]; exists {
-		tsb.accessOrder = append(tsb.accessOrder[:idx], tsb.accessOrder[idx+1:]...)
-		// Update indices for remaining keys
-		for i := idx; i < len(tsb.accessOrder); i++ {
-			tsb.accessMap[tsb.accessOrder[i]] = i
-		}
-	}
-
-	// Add to end (most recently used)
-	tsb.accessOrder = append(tsb.accessOrder, key)
-	tsb.accessMap[key] = len(tsb.accessOrder) - 1
-}
-
-func (tsb *TimeSeriesBuffer) evictLRU() {
-	tsb.accessMu.Lock()
-	if len(tsb.accessOrder) == 0 {
-		tsb.accessMu.Unlock()
+	// Check if already exists
+	if _, exists := tsb.fifoIndex[key]; exists {
 		return
 	}
 
-	// Get least recently used metric
-	lruKey := tsb.accessOrder[0]
-	tsb.accessOrder = tsb.accessOrder[1:]
-	delete(tsb.accessMap, lruKey)
-
-	// Update indices
-	for i := 0; i < len(tsb.accessOrder); i++ {
-		tsb.accessMap[tsb.accessOrder[i]] = i
+	// Add to end of queue
+	node := fifoNode{
+		key:       key,
+		createdAt: time.Now(),
 	}
-	tsb.accessMu.Unlock()
+	tsb.fifoQueue = append(tsb.fifoQueue, node)
+	tsb.fifoIndex[key] = len(tsb.fifoQueue) - 1
+}
+
+func (tsb *TimeSeriesBuffer) evictFIFO() {
+	tsb.fifoMu.Lock()
+	if len(tsb.fifoQueue) == 0 {
+		tsb.fifoMu.Unlock()
+		return
+	}
+
+	// Get oldest (first in queue)
+	oldestNode := tsb.fifoQueue[0]
+	oldestKey := oldestNode.key
+
+	// Remove from queue
+	tsb.fifoQueue = tsb.fifoQueue[1:]
+	delete(tsb.fifoIndex, oldestKey)
+
+	// Rebuild index after removal
+	for i := range tsb.fifoQueue {
+		tsb.fifoIndex[tsb.fifoQueue[i].key] = i
+	}
+	tsb.fifoMu.Unlock()
 
 	// Remove the buffer
 	tsb.mu.Lock()
-	delete(tsb.buffers, lruKey)
+	delete(tsb.buffers, oldestKey)
 	tsb.mu.Unlock()
 }
 
@@ -164,13 +173,23 @@ func (tsb *TimeSeriesBuffer) getCurrentMemoryUsage() int64 {
 	tsb.mu.RLock()
 	defer tsb.mu.RUnlock()
 
-	// Estimate: each DataPoint ≈ 100 bytes (time=24, float64=8, map overhead≈68)
-	totalPoints := 0
-	for _, buffer := range tsb.buffers {
-		totalPoints += buffer.Size()
+	// Estimate memory usage more accurately
+	var totalBytes int64
+	for key, buffer := range tsb.buffers {
+		// Base overhead per buffer
+		totalBytes += 200 // struct overhead
+
+		// Data points
+		pointSize := int64(buffer.Size())
+		// Each DataPoint: time (24 bytes) + float64 (8 bytes) + map overhead (~100 bytes average)
+		totalBytes += pointSize * 132
+
+		// Labels in map - estimate based on key
+		// Rough estimate: metric name + flowID + projectID strings
+		totalBytes += int64(len(key.Metric) + len(key.FlowID) + len(key.ProjectID))
 	}
 
-	return int64(totalPoints * 100)
+	return totalBytes
 }
 
 func (tsb *TimeSeriesBuffer) getOrCreateBuffer(key MetricKey) *CircularBuffer {
@@ -179,20 +198,18 @@ func (tsb *TimeSeriesBuffer) getOrCreateBuffer(key MetricKey) *CircularBuffer {
 	tsb.mu.RUnlock()
 
 	if exists {
-		tsb.trackAccess(key)
 		return buffer
 	}
 
 	// Check if we need to evict before creating new buffer
 	for tsb.getCurrentMemoryUsage() >= tsb.maxMemoryBytes {
-		tsb.evictLRU()
+		tsb.evictFIFO()
 	}
 
 	tsb.mu.Lock()
 	// Double-check after acquiring write lock
 	if buffer, exists = tsb.buffers[key]; exists {
 		tsb.mu.Unlock()
-		tsb.trackAccess(key)
 		return buffer
 	}
 
@@ -200,17 +217,17 @@ func (tsb *TimeSeriesBuffer) getOrCreateBuffer(key MetricKey) *CircularBuffer {
 	tsb.buffers[key] = buffer
 	tsb.mu.Unlock()
 
-	tsb.trackAccess(key)
+	tsb.addToFIFO(key)
 	return buffer
 }
 
-// Storage implementation using memory-limited circular buffers
+// Storage implementation using memory-limited circular buffers with FIFO eviction
 type Storage struct {
 	log      zerolog.Logger
 	tsBuffer *TimeSeriesBuffer
 }
 
-// NewStorage creates storage with memory-based limits
+// NewStorage creates storage with memory-based limits using FIFO eviction
 // maxMemoryMB: total memory budget (e.g., 1024 for 1GB)
 // pointsPerMetric: points to keep per unique metric (e.g., 3600 = 1 hour at 1/sec)
 func NewStorage(maxMemoryMB int, pointsPerMetric int) *Storage {
@@ -219,7 +236,13 @@ func NewStorage(maxMemoryMB int, pointsPerMetric int) *Storage {
 	}
 }
 
-func (s *Storage) SaveDataPoints(_ context.Context, dataPoints []*Datapoint) error {
+func (s *Storage) SaveDataPoints(ctx context.Context, dataPoints []*Datapoint) error {
+	// Check context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	for _, d := range dataPoints {
 		mk := MetricKey{
@@ -250,31 +273,6 @@ func (s *Storage) SaveDataPoints(_ context.Context, dataPoints []*Datapoint) err
 	}
 
 	return nil
-}
-
-// QueryMetrics retrieves data points for a metric within time range
-func (s *Storage) QueryMetrics(ctx context.Context, mk MetricKey, start, end time.Time) ([]DataPoint, error) {
-	s.tsBuffer.mu.RLock()
-	buffer, exists := s.tsBuffer.buffers[mk]
-	s.tsBuffer.mu.RUnlock()
-
-	if !exists {
-		return []DataPoint{}, nil
-	}
-
-	return buffer.Query(start, end), nil
-}
-
-// GetMemoryUsage returns current memory usage in bytes
-func (s *Storage) GetMemoryUsage() int64 {
-	return s.tsBuffer.getCurrentMemoryUsage()
-}
-
-// GetMetricsCount returns number of unique metrics being tracked
-func (s *Storage) GetMetricsCount() int {
-	s.tsBuffer.mu.RLock()
-	defer s.tsBuffer.mu.RUnlock()
-	return len(s.tsBuffer.buffers)
 }
 
 // GetStats returns detailed storage statistics
@@ -320,9 +318,9 @@ type StorageStats struct {
 }
 
 // Usage example:
-// storage := NewStorage(flowRepo, 1024, 3600)
+// storage := NewStorage(1024, 3600)
 // This creates storage with:
-// - 1GB memory limit
+// - 1GB memory limit (estimated)
 // - 3600 points per metric (1 hour at 1 sample/sec)
-// - Automatic LRU eviction when memory is full
-// - Keeps most recently accessed metrics in memory
+// - Automatic FIFO eviction when memory limit is approached
+// - Maintains timeline consistency by evicting oldest metrics first

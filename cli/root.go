@@ -13,7 +13,7 @@ import (
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Tiny Systems Open Telemetry Server",
+	Short: "TinySystems Open Telemetry Server",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
