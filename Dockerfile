@@ -15,5 +15,6 @@ RUN CGO_ENABLED=0 go build -o /bin/app ./cmd
 FROM alpine
 USER root
 RUN apk --no-cache add ca-certificates && update-ca-certificates
+COPY --from=builder /app/config.yaml /config.yaml
 COPY --from=builder /bin/app /app
 CMD ["/app"]
