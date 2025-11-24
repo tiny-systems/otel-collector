@@ -17,4 +17,5 @@ USER root
 RUN apk --no-cache add ca-certificates && update-ca-certificates
 COPY --from=builder /app/config.yaml /config.yaml
 COPY --from=builder /bin/app /app
-CMD ["/app"]
+ENTRYPOINT ["/app"]
+CMD ["run"]
