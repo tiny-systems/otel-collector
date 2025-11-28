@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/tiny-systems/otel-server/pkg/otlpconv"
+	"github.com/tiny-systems/otel-collector/pkg/otlpconv"
 	collectormetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"golang.org/x/exp/maps"

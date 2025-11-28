@@ -2,8 +2,8 @@ package otlpconv
 
 import (
 	"encoding/json"
-	"github.com/tiny-systems/otel-server/pkg/attrkey"
-	"github.com/tiny-systems/otel-server/pkg/unsafeconv"
+	"github.com/tiny-systems/otel-collector/pkg/attrkey"
+	"github.com/tiny-systems/otel-collector/pkg/unsafeconv"
 	"log"
 	"strconv"
 

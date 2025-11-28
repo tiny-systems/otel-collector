@@ -1,6 +1,6 @@
 package attrkey
 
-import "github.com/tiny-systems/otel-server/pkg/unsafeconv"
+import "github.com/tiny-systems/otel-collector/pkg/unsafeconv"
 
 var promTable = [256]uint8{
 	// digit+alpha

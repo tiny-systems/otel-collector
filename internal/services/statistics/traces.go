@@ -1,7 +1,7 @@
 package statistics
 
 import (
-	"github.com/tiny-systems/otel-server/pkg/api-go"
+	"github.com/tiny-systems/otel-collector/pkg/api-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"time"

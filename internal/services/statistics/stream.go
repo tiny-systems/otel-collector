@@ -3,8 +3,8 @@ package statistics
 import (
 	"fmt"
 	"github.com/rs/zerolog/log"
-	"github.com/tiny-systems/otel-server/internal/services/opentelemetry"
-	"github.com/tiny-systems/otel-server/pkg/api-go"
+	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry"
+	"github.com/tiny-systems/otel-collector/pkg/api-go"
 )
 
 func (s *Service) GetStream(req *api.StatisticsStreamRequest, stream api.StatisticsService_GetStreamServer) error {

@@ -1,9 +1,9 @@
 package statistics
 
 import (
-	"github.com/tiny-systems/otel-server/internal/services/opentelemetry/metrics"
-	"github.com/tiny-systems/otel-server/internal/services/opentelemetry/trace"
-	"github.com/tiny-systems/otel-server/pkg/api-go"
+	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry/metrics"
+	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry/trace"
+	"github.com/tiny-systems/otel-collector/pkg/api-go"
 )
 
 type Service struct {

@@ -1,4 +1,4 @@
-module github.com/tiny-systems/otel-server
+module github.com/tiny-systems/otel-collector
 
 go 1.24.2
 
@@ -11,7 +11,6 @@ require (
 	github.com/tiny-systems/module v0.1.144
 	github.com/zyedidia/generic v1.2.1
 	go.opentelemetry.io/proto/otlp v1.3.1
-	go4.org v0.0.0-20230225012048-214862532bf5
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 	golang.org/x/sync v0.14.0
 	google.golang.org/grpc v1.72.0

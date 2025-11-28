@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"context"
-	"github.com/tiny-systems/otel-server/internal/services/opentelemetry"
+	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry"
 	"sync"
 	"time"
 )

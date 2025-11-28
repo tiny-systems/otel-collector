@@ -1,8 +1,8 @@
 package statistics
 
 import (
-	"github.com/tiny-systems/otel-server/internal/services/opentelemetry/trace"
-	"github.com/tiny-systems/otel-server/pkg/api-go"
+	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry/trace"
+	"github.com/tiny-systems/otel-collector/pkg/api-go"
 )
 
 func trace2Api(trace *trace.Entry) *api.Trace {
