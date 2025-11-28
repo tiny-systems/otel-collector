@@ -57,9 +57,9 @@ var runCmd = &cobra.Command{
 
 		wg, ctx := errgroup.WithContext(ctx)
 
-		metricsStore := metrics.NewStorage(512, 3600)
+		metricsStorage := metrics.NewStorage(512, 3600)
 		// processes batches
-		dataPointProcessor := metrics.NewDatapointProcessor(metricsStore.SaveDataPoints)
+		dataPointProcessor := metrics.NewDatapointProcessor(metricsStorage.SaveDataPoints)
 		//
 		wg.Go(func() error {
 			dataPointProcessor.ProcessLoop(ctx)
@@ -77,7 +77,7 @@ var runCmd = &cobra.Command{
 		//
 		collectortracepb.RegisterTraceServiceServer(server, traceService)
 		//
-		api.RegisterStatisticsServiceServer(server, statistics.NewService(dataPointProcessor, traceStorage))
+		api.RegisterStatisticsServiceServer(server, statistics.NewService(dataPointProcessor, traceStorage, metricsStorage))
 		//
 		reflection.Register(server)
 
@@ -106,7 +106,7 @@ var runCmd = &cobra.Command{
 					Int("oldest_minutes", tstats.OldestDataMinutes).
 					Msg("trace storage stats")
 
-				mstats := metricsStore.GetStats()
+				mstats := metricsStorage.GetStats()
 
 				log.Info().
 					Int("metrics count", mstats.MetricsCount).

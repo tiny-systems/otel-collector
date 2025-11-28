@@ -6,4 +6,14 @@ import "statistics.messages.proto";
 service StatisticsService {
   rpc GetStream(StatisticsStreamRequest) returns (stream StatisticsStreamResponse);
   rpc GetTraces(StatisticsGetTracesRequest) returns (StatisticsGetTracesResponse);
+
+  rpc QueryMetric(QueryMetricRequest) returns (QueryMetricResponse);
+
+  // GetProjectSummary returns aggregated summary of all metrics for a project
+  rpc GetProjectSummary(GetProjectSummaryRequest) returns (GetProjectSummaryResponse);
+  // GetAvailableFlows returns list of flows for a project
+  rpc GetAvailableFlows(GetAvailableFlowsRequest) returns (GetAvailableFlowsResponse);
+
+  // GetAvailableMetrics returns list of available metrics for a project/flow
+  rpc GetAvailableMetrics(GetAvailableMetricsRequest) returns (GetAvailableMetricsResponse);
 }

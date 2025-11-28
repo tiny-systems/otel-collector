@@ -19,7 +19,19 @@ type AggregatedMetric struct {
 // SubscriptionKey uniquely identifies a subscription
 type SubscriptionKey struct {
 	ProjectID string
-	FlowID    string
+	FlowID    string // Empty string means "all flows for this project"
+}
+
+func (sk SubscriptionKey) matchesDatapoint(projectID, flowID string) bool {
+	if sk.ProjectID != projectID {
+		return false
+	}
+	// If subscription FlowID is empty, match all flows
+	if sk.FlowID == "" {
+		return true
+	}
+	// Otherwise must match exactly
+	return sk.FlowID == flowID
 }
 
 // Subscriber receives aggregated metrics
@@ -44,11 +56,11 @@ type RealtimeAggregator struct {
 	// Metrics to track
 	trackedMetrics map[string]struct{}
 
-	// Simple limit for memory protection
+	// Simple limit for cardinality protection
 	maxAggregates int
 
 	// Statistics
-	totalRejected   int64 // New: tracks rejected metrics when at capacity
+	totalEvictions  int64
 	totalAggregated int64
 	totalFlushed    int64
 	droppedNoSub    int64
@@ -103,13 +115,19 @@ func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
 	}
 
 	// Check if there's an active subscription for this project/flow
-	subKey := SubscriptionKey{
-		ProjectID: projectID,
-		FlowID:    flowID,
-	}
+	// Check both specific flow subscription AND project-level subscription
+	hasSubscription := false
 
 	ra.subMu.RLock()
-	_, hasSubscription := ra.subscribers[subKey]
+	// Check for exact match (project + flow)
+	exactKey := SubscriptionKey{ProjectID: projectID, FlowID: flowID}
+	_, hasSubscription = ra.subscribers[exactKey]
+
+	// Check for project-level subscription (empty flowID)
+	if !hasSubscription {
+		projectKey := SubscriptionKey{ProjectID: projectID, FlowID: ""}
+		_, hasSubscription = ra.subscribers[projectKey]
+	}
 	ra.subMu.RUnlock()
 
 	// Skip aggregation if no one is subscribed to this project/flow
@@ -126,6 +144,8 @@ func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
 		// Flush current window
 		ra.flushWindow()
 		ra.currentWindow = windowTime
+		// Clear aggregates for new window
+		ra.currentAggregates = make(map[AggregationKey]*MetricAggregate)
 	}
 
 	// Aggregate the datapoint
@@ -135,14 +155,17 @@ func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
 		FlowID:    flowID,
 	}
 
+	// Simple cardinality protection: reject if at limit and new key
+	if len(ra.currentAggregates) >= ra.maxAggregates {
+		if _, exists := ra.currentAggregates[key]; !exists {
+			// At limit and this is a new key - reject it
+			ra.totalEvictions++
+			return
+		}
+	}
+
 	agg, exists := ra.currentAggregates[key]
 	if !exists {
-		// Check if we've hit the limit for new metrics in this window
-		if len(ra.currentAggregates) >= ra.maxAggregates {
-			ra.totalRejected++
-			return // Reject new metric to stay within memory bounds
-		}
-
 		agg = &MetricAggregate{
 			Min: dp.Sum,
 			Max: dp.Sum,
@@ -183,28 +206,19 @@ func (ra *RealtimeAggregator) flushWindow() {
 		return
 	}
 
-	// Only send metrics for subscriptions that exist
+	// Get all active subscriptions
 	ra.subMu.RLock()
-	activeSubscriptions := make(map[SubscriptionKey]bool)
-	for subKey := range ra.subscribers {
-		activeSubscriptions[subKey] = true
+	activeSubscriptions := make(map[SubscriptionKey][]*Subscriber)
+	for subKey, subs := range ra.subscribers {
+		activeSubscriptions[subKey] = subs
 	}
 	ra.subMu.RUnlock()
 
-	// Group by subscription key - only for active subscriptions
-	metrics := make(map[SubscriptionKey][]AggregatedMetric)
+	// Group metrics by what subscribers need
+	// We need to handle both specific flow subscriptions and project-level subscriptions
+	metricsToSend := make(map[SubscriptionKey][]AggregatedMetric)
 
 	for key, agg := range ra.currentAggregates {
-		subKey := SubscriptionKey{
-			ProjectID: key.ProjectID,
-			FlowID:    key.FlowID,
-		}
-
-		// Skip if no active subscription for this key
-		if !activeSubscriptions[subKey] {
-			continue
-		}
-
 		// Calculate final value based on metric type
 		var finalValue float64
 		if key.Metric == opentelemetry.MetricTraceCount || key.Metric == opentelemetry.MetricSpanErrorCount {
@@ -223,13 +237,17 @@ func (ra *RealtimeAggregator) flushWindow() {
 			Value:     finalValue,
 		}
 
-		metrics[subKey] = append(metrics[subKey], metric)
+		// Send to all matching subscriptions
+		for subKey := range activeSubscriptions {
+			if subKey.matchesDatapoint(key.ProjectID, key.FlowID) {
+				metricsToSend[subKey] = append(metricsToSend[subKey], metric)
+			}
+		}
 	}
 
 	// Send to subscribers
-	ra.subMu.RLock()
-	for subKey, metricList := range metrics {
-		if subs, exists := ra.subscribers[subKey]; exists {
+	for subKey, metricList := range metricsToSend {
+		if subs, exists := activeSubscriptions[subKey]; exists {
 			for _, sub := range subs {
 				for _, metric := range metricList {
 					select {
@@ -245,7 +263,6 @@ func (ra *RealtimeAggregator) flushWindow() {
 			}
 		}
 	}
-	ra.subMu.RUnlock()
 
 	// Clear aggregates for next window
 	ra.currentAggregates = make(map[AggregationKey]*MetricAggregate)
@@ -266,15 +283,15 @@ func (ra *RealtimeAggregator) Subscribe(ctx context.Context, projectID, flowID s
 	}
 
 	ra.subMu.Lock()
+	defer ra.subMu.Unlock()
 	ra.subscribers[sub.Key] = append(ra.subscribers[sub.Key], sub)
-	ra.subMu.Unlock()
-
 	return sub
 }
 
 // Unsubscribe removes a subscription
 func (ra *RealtimeAggregator) Unsubscribe(sub *Subscriber) {
 	sub.cancel()
+	defer close(sub.Ch)
 
 	ra.subMu.Lock()
 	subs := ra.subscribers[sub.Key]
@@ -285,26 +302,55 @@ func (ra *RealtimeAggregator) Unsubscribe(sub *Subscriber) {
 		}
 	}
 
-	// Check if this was the last subscriber for this key
 	lastSubscriber := len(ra.subscribers[sub.Key]) == 0
 	if lastSubscriber {
 		delete(ra.subscribers, sub.Key)
 	}
 	ra.subMu.Unlock()
 
-	// If no more subscribers for this key, clean up aggregates immediately
-	if lastSubscriber {
-		ra.mu.Lock()
-		// Remove all aggregates for this subscription key
-		for aggKey := range ra.currentAggregates {
-			if aggKey.ProjectID == sub.Key.ProjectID && aggKey.FlowID == sub.Key.FlowID {
-				delete(ra.currentAggregates, aggKey)
-			}
-		}
-		ra.mu.Unlock()
+	if !lastSubscriber {
+		return
 	}
 
-	close(sub.Ch)
+	// Check if cleanup is needed - MUST check BEFORE acquiring mu lock
+	ra.subMu.RLock()
+	needsCleanup := true
+	if sub.Key.FlowID == "" {
+		for subKey := range ra.subscribers {
+			if subKey.ProjectID == sub.Key.ProjectID {
+				needsCleanup = false
+				break
+			}
+		}
+	} else {
+		projectKey := SubscriptionKey{ProjectID: sub.Key.ProjectID, FlowID: ""}
+		if _, exists := ra.subscribers[projectKey]; exists {
+			needsCleanup = false
+		}
+	}
+	ra.subMu.RUnlock()
+
+	if !needsCleanup {
+		return
+	}
+
+	// Now safe to acquire main lock
+	ra.mu.Lock()
+	defer ra.mu.Unlock()
+
+	// Remove aggregates
+	for aggKey := range ra.currentAggregates {
+		shouldRemove := false
+		if sub.Key.FlowID == "" {
+			shouldRemove = aggKey.ProjectID == sub.Key.ProjectID
+		} else {
+			shouldRemove = aggKey.ProjectID == sub.Key.ProjectID &&
+				aggKey.FlowID == sub.Key.FlowID
+		}
+		if shouldRemove {
+			delete(ra.currentAggregates, aggKey)
+		}
+	}
 }
 
 // FlushLoop periodically flushes the aggregation window
@@ -318,6 +364,8 @@ func (ra *RealtimeAggregator) FlushLoop(ctx context.Context) {
 			ra.mu.Lock()
 			ra.flushWindow()
 			ra.currentWindow = time.Now().Truncate(ra.windowDuration)
+			// Clear aggregates for new window
+			ra.currentAggregates = make(map[AggregationKey]*MetricAggregate)
 			ra.mu.Unlock()
 		case <-ctx.Done():
 			// Final flush
@@ -345,7 +393,7 @@ func (ra *RealtimeAggregator) GetSubscriberCount() int {
 func (ra *RealtimeAggregator) GetStats() RealtimeStats {
 	ra.mu.Lock()
 	aggregateCount := len(ra.currentAggregates)
-	totalRejected := ra.totalRejected
+	totalEvictions := ra.totalEvictions
 	totalAggregated := ra.totalAggregated
 	totalFlushed := ra.totalFlushed
 	droppedNoSub := ra.droppedNoSub
@@ -367,7 +415,7 @@ func (ra *RealtimeAggregator) GetStats() RealtimeStats {
 		MaxAggregates:       ra.maxAggregates,
 		WindowDurationMs:    int(ra.windowDuration.Milliseconds()),
 		TrackedMetricsCount: len(ra.trackedMetrics),
-		TotalRejected:       totalRejected,
+		TotalEvictions:      totalEvictions,
 		TotalAggregated:     totalAggregated,
 		TotalFlushed:        totalFlushed,
 		DroppedNoSub:        droppedNoSub,
@@ -382,7 +430,7 @@ type RealtimeStats struct {
 	MaxAggregates       int
 	WindowDurationMs    int
 	TrackedMetricsCount int
-	TotalRejected       int64
+	TotalEvictions      int64
 	TotalAggregated     int64
 	TotalFlushed        int64
 	DroppedNoSub        int64

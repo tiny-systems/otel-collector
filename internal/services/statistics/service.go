@@ -8,13 +8,15 @@ import (
 
 type Service struct {
 	api.UnimplementedStatisticsServiceServer
-	processor    *metrics.DatapointProcessor
-	traceStorage *trace.Storage
+	processor     *metrics.DatapointProcessor
+	traceStorage  *trace.Storage
+	metricStorage *metrics.Storage
 }
 
-func NewService(processor *metrics.DatapointProcessor, traceStorage *trace.Storage) *Service {
+func NewService(processor *metrics.DatapointProcessor, traceStorage *trace.Storage, metricStorage *metrics.Storage) *Service {
 	return &Service{
-		processor:    processor,
-		traceStorage: traceStorage,
+		processor:     processor,
+		traceStorage:  traceStorage,
+		metricStorage: metricStorage,
 	}
 }

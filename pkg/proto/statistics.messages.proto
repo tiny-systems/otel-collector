@@ -2,6 +2,7 @@ syntax = "proto3";
 package api;
 option go_package = "./api-go;api";
 
+import "google/protobuf/timestamp.proto";
 import "trace.proto";
 
 message StatisticsStreamRequest {
@@ -40,3 +41,140 @@ message Dataset {
   string BorderColor = 3;
 }
 
+
+
+// QueryMetricRequest requests data for a specific metric
+message QueryMetricRequest {
+  // Required: Project identifier
+  string project_id = 1;
+
+  // Optional: Flow identifier. If empty, aggregates across all flows
+  string flow_id = 2;
+
+  // Required: Metric name (e.g., "tiny_span_error_count", "tiny_trace_count")
+  string metric = 3;
+
+  // Required: Start of time range
+  google.protobuf.Timestamp start_time = 4;
+
+  // Required: End of time range
+  google.protobuf.Timestamp end_time = 5;
+
+  // Optional: Downsample configuration
+  DownsampleConfig downsample = 6;
+}
+
+// DownsampleConfig controls server-side downsampling
+message DownsampleConfig {
+  // If true, enable downsampling
+  bool enabled = 1;
+
+  // Number of data points to return (e.g., 100 for charts)
+  // If 0 or not set, returns all points
+  int32 max_points = 2;
+}
+
+// QueryMetricResponse contains the query result
+message QueryMetricResponse {
+  // Metric information
+  string metric = 1;
+  string project_id = 2;
+  string flow_id = 3; // Empty if aggregated across flows
+
+  // Time range
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+
+  // Aggregated statistics
+  MetricStatistics stats = 6;
+
+  // Time series data points
+  repeated DataPoint points = 7;
+
+  // Metadata
+  bool downsampled = 8; // True if downsampling was applied
+  int32 original_point_count = 9; // Original count before downsampling
+}
+
+// MetricStatistics contains aggregated statistics
+message MetricStatistics {
+  double sum = 1;   // Total sum over time range
+  double avg = 2;   // Average value
+  double min = 3;   // Minimum value
+  double max = 4;   // Maximum value
+  int32 count = 5;  // Number of data points
+}
+
+// DataPoint represents a single metric observation
+message DataPoint {
+  google.protobuf.Timestamp time = 1;
+  double value = 2;
+  map<string, string> labels = 3;
+}
+
+// GetProjectSummaryRequest requests summary for a project
+message GetProjectSummaryRequest {
+  // Required: Project identifier
+  string project_id = 1;
+
+  // Optional: Flow identifier. If empty, aggregates across all flows
+  string flow_id = 2;
+
+  // Required: Start of time range
+  google.protobuf.Timestamp start_time = 3;
+
+  // Required: End of time range
+  google.protobuf.Timestamp end_time = 4;
+}
+
+// GetProjectSummaryResponse contains project summary
+message GetProjectSummaryResponse {
+  string project_id = 1;
+  string flow_id = 2; // Empty if all flows
+
+  // Time range
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+
+  // Metrics summary (key = metric name)
+  map<string, MetricSummary> metrics = 5;
+}
+
+// MetricSummary contains summary for a single metric
+message MetricSummary {
+  string name = 1;
+  double sum = 2;
+  double avg = 3;
+  double min = 4;
+  double max = 5;
+  int32 count = 6;
+  double latest = 7; // Most recent value
+}
+
+// GetAvailableFlowsRequest requests list of flows
+message GetAvailableFlowsRequest {
+  // Required: Project identifier
+  string project_id = 1;
+}
+
+// GetAvailableFlowsResponse returns list of flows
+message GetAvailableFlowsResponse {
+  string project_id = 1;
+  repeated string flow_ids = 2;
+}
+
+// GetAvailableMetricsRequest requests list of available metrics
+message GetAvailableMetricsRequest {
+  // Required: Project identifier
+  string project_id = 1;
+
+  // Optional: Flow identifier. If empty, returns metrics across all flows
+  string flow_id = 2;
+}
+
+// GetAvailableMetricsResponse returns list of metrics
+message GetAvailableMetricsResponse {
+  string project_id = 1;
+  string flow_id = 2; // Empty if all flows
+  repeated string metrics = 3;
+}

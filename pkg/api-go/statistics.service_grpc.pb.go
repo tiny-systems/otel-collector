@@ -20,6 +20,13 @@ const _ = grpc.SupportPackageIsVersion7
 type StatisticsServiceClient interface {
 	GetStream(ctx context.Context, in *StatisticsStreamRequest, opts ...grpc.CallOption) (StatisticsService_GetStreamClient, error)
 	GetTraces(ctx context.Context, in *StatisticsGetTracesRequest, opts ...grpc.CallOption) (*StatisticsGetTracesResponse, error)
+	QueryMetric(ctx context.Context, in *QueryMetricRequest, opts ...grpc.CallOption) (*QueryMetricResponse, error)
+	// GetProjectSummary returns aggregated summary of all metrics for a project
+	GetProjectSummary(ctx context.Context, in *GetProjectSummaryRequest, opts ...grpc.CallOption) (*GetProjectSummaryResponse, error)
+	// GetAvailableFlows returns list of flows for a project
+	GetAvailableFlows(ctx context.Context, in *GetAvailableFlowsRequest, opts ...grpc.CallOption) (*GetAvailableFlowsResponse, error)
+	// GetAvailableMetrics returns list of available metrics for a project/flow
+	GetAvailableMetrics(ctx context.Context, in *GetAvailableMetricsRequest, opts ...grpc.CallOption) (*GetAvailableMetricsResponse, error)
 }
 
 type statisticsServiceClient struct {
@@ -71,12 +78,55 @@ func (c *statisticsServiceClient) GetTraces(ctx context.Context, in *StatisticsG
 	return out, nil
 }
 
+func (c *statisticsServiceClient) QueryMetric(ctx context.Context, in *QueryMetricRequest, opts ...grpc.CallOption) (*QueryMetricResponse, error) {
+	out := new(QueryMetricResponse)
+	err := c.cc.Invoke(ctx, "/api.StatisticsService/QueryMetric", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *statisticsServiceClient) GetProjectSummary(ctx context.Context, in *GetProjectSummaryRequest, opts ...grpc.CallOption) (*GetProjectSummaryResponse, error) {
+	out := new(GetProjectSummaryResponse)
+	err := c.cc.Invoke(ctx, "/api.StatisticsService/GetProjectSummary", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *statisticsServiceClient) GetAvailableFlows(ctx context.Context, in *GetAvailableFlowsRequest, opts ...grpc.CallOption) (*GetAvailableFlowsResponse, error) {
+	out := new(GetAvailableFlowsResponse)
+	err := c.cc.Invoke(ctx, "/api.StatisticsService/GetAvailableFlows", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *statisticsServiceClient) GetAvailableMetrics(ctx context.Context, in *GetAvailableMetricsRequest, opts ...grpc.CallOption) (*GetAvailableMetricsResponse, error) {
+	out := new(GetAvailableMetricsResponse)
+	err := c.cc.Invoke(ctx, "/api.StatisticsService/GetAvailableMetrics", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StatisticsServiceServer is the server API for StatisticsService service.
 // All implementations must embed UnimplementedStatisticsServiceServer
 // for forward compatibility
 type StatisticsServiceServer interface {
 	GetStream(*StatisticsStreamRequest, StatisticsService_GetStreamServer) error
 	GetTraces(context.Context, *StatisticsGetTracesRequest) (*StatisticsGetTracesResponse, error)
+	QueryMetric(context.Context, *QueryMetricRequest) (*QueryMetricResponse, error)
+	// GetProjectSummary returns aggregated summary of all metrics for a project
+	GetProjectSummary(context.Context, *GetProjectSummaryRequest) (*GetProjectSummaryResponse, error)
+	// GetAvailableFlows returns list of flows for a project
+	GetAvailableFlows(context.Context, *GetAvailableFlowsRequest) (*GetAvailableFlowsResponse, error)
+	// GetAvailableMetrics returns list of available metrics for a project/flow
+	GetAvailableMetrics(context.Context, *GetAvailableMetricsRequest) (*GetAvailableMetricsResponse, error)
 	mustEmbedUnimplementedStatisticsServiceServer()
 }
 
@@ -89,6 +139,18 @@ func (UnimplementedStatisticsServiceServer) GetStream(*StatisticsStreamRequest, 
 }
 func (UnimplementedStatisticsServiceServer) GetTraces(context.Context, *StatisticsGetTracesRequest) (*StatisticsGetTracesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTraces not implemented")
+}
+func (UnimplementedStatisticsServiceServer) QueryMetric(context.Context, *QueryMetricRequest) (*QueryMetricResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryMetric not implemented")
+}
+func (UnimplementedStatisticsServiceServer) GetProjectSummary(context.Context, *GetProjectSummaryRequest) (*GetProjectSummaryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProjectSummary not implemented")
+}
+func (UnimplementedStatisticsServiceServer) GetAvailableFlows(context.Context, *GetAvailableFlowsRequest) (*GetAvailableFlowsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAvailableFlows not implemented")
+}
+func (UnimplementedStatisticsServiceServer) GetAvailableMetrics(context.Context, *GetAvailableMetricsRequest) (*GetAvailableMetricsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAvailableMetrics not implemented")
 }
 func (UnimplementedStatisticsServiceServer) mustEmbedUnimplementedStatisticsServiceServer() {}
 
@@ -142,6 +204,78 @@ func _StatisticsService_GetTraces_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StatisticsService_QueryMetric_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMetricRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StatisticsServiceServer).QueryMetric(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/api.StatisticsService/QueryMetric",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StatisticsServiceServer).QueryMetric(ctx, req.(*QueryMetricRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StatisticsService_GetProjectSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProjectSummaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StatisticsServiceServer).GetProjectSummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/api.StatisticsService/GetProjectSummary",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StatisticsServiceServer).GetProjectSummary(ctx, req.(*GetProjectSummaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StatisticsService_GetAvailableFlows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAvailableFlowsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StatisticsServiceServer).GetAvailableFlows(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/api.StatisticsService/GetAvailableFlows",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StatisticsServiceServer).GetAvailableFlows(ctx, req.(*GetAvailableFlowsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StatisticsService_GetAvailableMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAvailableMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StatisticsServiceServer).GetAvailableMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/api.StatisticsService/GetAvailableMetrics",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StatisticsServiceServer).GetAvailableMetrics(ctx, req.(*GetAvailableMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StatisticsService_ServiceDesc is the grpc.ServiceDesc for StatisticsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +286,22 @@ var StatisticsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTraces",
 			Handler:    _StatisticsService_GetTraces_Handler,
+		},
+		{
+			MethodName: "QueryMetric",
+			Handler:    _StatisticsService_QueryMetric_Handler,
+		},
+		{
+			MethodName: "GetProjectSummary",
+			Handler:    _StatisticsService_GetProjectSummary_Handler,
+		},
+		{
+			MethodName: "GetAvailableFlows",
+			Handler:    _StatisticsService_GetAvailableFlows_Handler,
+		},
+		{
+			MethodName: "GetAvailableMetrics",
+			Handler:    _StatisticsService_GetAvailableMetrics_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
