@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/rs/zerolog/log"
 	"github.com/tiny-systems/otel-collector/pkg/attrkey"
-	"github.com/tiny-systems/otel-collector/pkg/bunconv"
+	"github.com/tiny-systems/otel-collector/pkg/conv"
 	"github.com/tiny-systems/otel-collector/pkg/otlpconv"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -172,7 +172,7 @@ func (p *otlpProcessor) otlpNewDatapoint(
 	dest := p.newDatapoint(metricName, instrument, attrs, unixNano)
 
 	dest.Description = metric.Description
-	dest.Unit = bunconv.NormUnit(metric.Unit)
+	dest.Unit = conv.NormUnit(metric.Unit)
 
 	return dest
 }

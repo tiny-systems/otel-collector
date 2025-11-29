@@ -1,7 +1,7 @@
 syntax = "proto3";
 package api;
 option go_package = "./api-go;api";
-import "statistics.messages.proto";
+import "stats.messages.proto";
 
 service StatisticsService {
   rpc GetStream(StatisticsStreamRequest) returns (stream StatisticsStreamResponse);

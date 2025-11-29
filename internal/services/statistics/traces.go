@@ -39,7 +39,7 @@ func (s *Service) GetTraces(ctx context.Context, req *api.StatisticsGetTracesReq
 
 	traces := s.traceStorage.QueryTraces(req.ProjectID, req.FlowID, time.Unix(start, 0), time.Unix(end, 0), int(offset), 1000)
 
-	traceApi := make([]*api.Trace, len(traces))
+	traceApi := make([]*api.TraceInfo, len(traces))
 	for i, trace := range traces {
 		traceApi[i] = trace2Api(trace)
 	}

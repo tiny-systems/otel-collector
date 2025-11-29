@@ -311,5 +311,5 @@ var StatisticsService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "statistics.service.proto",
+	Metadata: "stats.service.proto",
 }

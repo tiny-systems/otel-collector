@@ -23,7 +23,7 @@ message StatisticsGetTracesRequest {
 }
 
 message StatisticsGetTracesResponse {
-  repeated Trace Traces = 1;
+  repeated TraceInfo Traces = 1;
   int64 Total = 2;
   int64 Offset = 3;
 }

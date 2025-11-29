@@ -5,8 +5,8 @@ import (
 	"github.com/tiny-systems/otel-collector/pkg/api-go"
 )
 
-func trace2Api(trace *trace.Entry) *api.Trace {
-	return &api.Trace{
+func trace2Api(trace *trace.Entry) *api.TraceInfo {
+	return &api.TraceInfo{
 		ID:       trace.TraceID,
 		Spans:    int64(len(trace.Spans)),
 		Errors:   int64(trace.ErrorsCount),
