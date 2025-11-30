@@ -76,7 +76,8 @@ var runCmd = &cobra.Command{
 
 		//
 		collectortracepb.RegisterTraceServiceServer(server, traceService)
-		//
+
+		// client
 		api.RegisterStatisticsServiceServer(server, statistics.NewService(dataPointProcessor, traceStorage, metricsStorage))
 		//
 		reflection.Register(server)

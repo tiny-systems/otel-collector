@@ -3,6 +3,7 @@ package trace
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry"
 	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry/metrics"
 	"github.com/tiny-systems/otel-collector/pkg/attrkey"
@@ -193,6 +194,7 @@ func (s *Service) Export(ctx context.Context, request *collectortracepb.ExportTr
 			continue
 		}
 
+		fmt.Println("add or update trace,", traceID)
 		s.storage.addOrUpdateTrace(traceID, trace)
 
 		// Send metrics to metric storage

@@ -29,10 +29,9 @@ message StatisticsGetTracesResponse {
 }
 
 message StatsEvent {
-  int32 Index = 1;
+  string Metric = 1;
   float Value = 2;
   int64 Datetime = 3;
-  Dataset Dataset = 4;
 }
 
 message Dataset {
