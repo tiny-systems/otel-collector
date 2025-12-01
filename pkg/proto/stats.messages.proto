@@ -18,8 +18,8 @@ message StatisticsStreamResponse {
 
 message StatisticsGetTracesRequest {
   string FlowID = 1;
-  int64 Start = 2;
-  int64 End = 3;
+  google.protobuf.Timestamp Start = 2;
+  google.protobuf.Timestamp End = 3;
   int64 Offset = 4;
   string ProjectID = 5;
 }

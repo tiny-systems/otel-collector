@@ -64,7 +64,7 @@ func (ts *Storage) evictOldest() bool {
 		return false
 	}
 
-	// Get oldest trace (first in list)
+	// Get the oldest trace (first in list)
 	oldestTraceID := ts.creationOrder[0]
 	ts.creationOrder = ts.creationOrder[1:]
 	ts.creationMu.Unlock()
@@ -205,6 +205,7 @@ func (ts *Storage) addOrUpdateTrace(traceID string, stat *Stat) bool {
 			Spans:     make([]*v1.Span, 0, len(stat.spans)),
 			CreatedAt: time.Now(),
 		}
+
 		ts.traces[traceID] = entry
 
 		// Add to indexes
@@ -236,6 +237,14 @@ func (ts *Storage) addOrUpdateTrace(traceID string, stat *Stat) bool {
 
 	// Add to time index if new entry
 	if !entryExists {
+		log.Debug().
+			Str("traceID", traceID).
+			Time("startTime", entry.StartTime).
+			Time("endTime", entry.EndTime).
+			Str("projectID", entry.ProjectID).
+			Str("flowID", entry.FlowID).
+			Msg("New trace added to storage")
+
 		ts.addToTimeIndex(entry)
 	}
 
@@ -281,16 +290,27 @@ func (ts *Storage) QueryTraces(projectID, flowID string, startTime, endTime time
 		}
 
 		// Filter by time range if specified
-		if !startTime.IsZero() && timeEntry.startTime.Before(startTime) {
-			continue
+		if !startTime.IsZero() && timeEntry.endTime.Before(startTime) {
+			continue // Trace ended before query range
 		}
-		if !endTime.IsZero() && timeEntry.endTime.After(endTime) {
-			continue
+		if !endTime.IsZero() && timeEntry.startTime.After(endTime) {
+			continue // Trace started after query range
 		}
 
 		matchingIDs = append(matchingIDs, timeEntry.traceID)
 	}
 	ts.timeIndexMu.RUnlock()
+
+	log.Debug().
+		Str("projectID", projectID).
+		Str("flowID", flowID).
+		Time("queryStart", startTime).
+		Time("queryEnd", endTime).
+		Int("totalInIndex", len(ts.timeIndex)).
+		Int("matchingCount", len(matchingIDs)).
+		Int("offset", offset).
+		Int("limit", limit).
+		Msg("QueryTraces executed")
 
 	// Apply offset and limit
 	if offset >= len(matchingIDs) {

@@ -13,7 +13,7 @@ func trace2Api(trace *trace.Entry) *api.TraceInfo {
 		Data:     int64(trace.DataCount),
 		Length:   int64(trace.DataLength),
 		Duration: int64(trace.DurationNs),
-		Start:    int64(trace.StartTime.Nanosecond()),
-		End:      int64(trace.EndTime.Nanosecond()),
+		Start:    trace.StartTime.UnixMicro(),
+		End:      trace.EndTime.UnixMicro(),
 	}
 }

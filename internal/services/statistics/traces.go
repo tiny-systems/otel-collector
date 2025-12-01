@@ -4,7 +4,6 @@ import (
 	"github.com/tiny-systems/otel-collector/pkg/api-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"time"
 )
 import "context"
 
@@ -18,14 +17,17 @@ func (s *Service) GetTraces(ctx context.Context, req *api.StatisticsGetTracesReq
 	}
 
 	start := req.Start
-	if start < 0 {
+
+	if start.Seconds < 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "start must be greater than zero")
 	}
 	end := req.End
-	if end < 0 {
+
+	if end.Seconds < 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "end must be greater than zero")
 	}
-	if end < start {
+
+	if end.AsTime().Before(start.AsTime()) {
 		return nil, status.Errorf(codes.InvalidArgument, "end must be greater than start")
 	}
 
@@ -37,7 +39,7 @@ func (s *Service) GetTraces(ctx context.Context, req *api.StatisticsGetTracesReq
 		return nil, status.Errorf(codes.InvalidArgument, "offset must be less than 1000")
 	}
 
-	traces := s.traceStorage.QueryTraces(req.ProjectID, req.FlowID, time.Unix(start, 0), time.Unix(end, 0), int(offset), 1000)
+	traces := s.traceStorage.QueryTraces(req.ProjectID, req.FlowID, start.AsTime(), end.AsTime(), int(offset), 1000)
 
 	traceApi := make([]*api.TraceInfo, len(traces))
 	for i, trace := range traces {
@@ -47,6 +49,7 @@ func (s *Service) GetTraces(ctx context.Context, req *api.StatisticsGetTracesReq
 	return &api.StatisticsGetTracesResponse{
 
 		Offset: req.Offset,
+		Total:  int64(len(traceApi)),
 		Traces: traceApi,
 	}, nil
 }

@@ -205,8 +205,6 @@ func (s *Service) Export(ctx context.Context, request *collectortracepb.ExportTr
 			for _, dp := range trace.getDataPoints() {
 				s.handler(ctx, dp)
 			}
-		} else {
-			log.Debug().Str("trace_id", traceID).Msg("existing trace - skipping metrics")
 		}
 
 	}
