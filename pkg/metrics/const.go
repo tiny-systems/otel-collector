@@ -1,4 +1,4 @@
-package opentelemetry
+package metrics
 
 const (
 	MetricTraceCount     = "tiny_trace_count"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/rs/zerolog/log"
 	"reflect"
+	"runtime"
 	"sync"
 	"time"
 
@@ -70,13 +71,13 @@ type DatapointProcessor struct {
 }
 
 func NewDatapointProcessor(handler Handler) *DatapointProcessor {
-	workers := 4 // configurable
+	workers := runtime.NumCPU() // configurable
 
 	p := &DatapointProcessor{
-		batchSize:          100,
+		batchSize:          10,
 		queue:              make(chan *Datapoint, 100000),
 		workers:            workers,
-		workQueue:          make(chan []*Datapoint, workers*2),
+		workQueue:          make(chan []*Datapoint, 100),
 		c2d:                NewCumToDeltaConv(100000),
 		handler:            handler,
 		realtimeAggregator: NewRealtimeAggregator(),
@@ -86,6 +87,10 @@ func NewDatapointProcessor(handler Handler) *DatapointProcessor {
 		"telemetry_sdk_language": {},
 		"telemetry_sdk_name":     {},
 		"telemetry_sdk_version":  {},
+		"service.instance.id":    {},
+		"host.name":              {},
+		"container.id":           {},
+		"process.pid":            {},
 	}
 
 	// Start worker pool
@@ -117,7 +122,7 @@ func (p *DatapointProcessor) AddDatapoint(_ context.Context, datapoint *Datapoin
 }
 
 func (p *DatapointProcessor) ProcessLoop(ctx context.Context) {
-	const timeout = time.Millisecond * 500
+	const timeout = time.Millisecond * 50
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -195,10 +200,7 @@ func (p *DatapointProcessor) _processDataPoints(ctx *datapointContext, datapoint
 
 		p.initDatapoint(ctx, dp)
 
-		// Feed to realtime aggregator BEFORE cumToDelta conversion
-		// This ensures we capture the original cumulative values
-		p.realtimeAggregator.AddDatapoint(dp)
-
+		// Convert cumulative to delta FIRST
 		if !p.cumToDelta(ctx, dp) {
 			datapoints = append(datapoints[:i], datapoints[i+1:]...)
 			p.mu.Lock()
@@ -206,6 +208,10 @@ func (p *DatapointProcessor) _processDataPoints(ctx *datapointContext, datapoint
 			p.mu.Unlock()
 			continue
 		}
+
+		// THEN feed to realtime aggregator (after conversion)
+		// Now dp.Sum contains the correct delta value
+		p.realtimeAggregator.AddDatapoint(dp)
 	}
 
 	if len(datapoints) == 0 {
@@ -262,6 +268,7 @@ func (p *DatapointProcessor) initDatapoint(ctx *datapointContext, datapoint *Dat
 	datapoint.AttrsHash = digest.Sum64()
 	datapoint.StringKeys = keys
 	datapoint.StringValues = values
+
 }
 
 func (p *DatapointProcessor) convertNumberPoint(
@@ -274,9 +281,14 @@ func (p *DatapointProcessor) convertNumberPoint(
 	}
 
 	prevPointAny := p.c2d.SwapPoint(key, point, datapoint.Time)
+
 	if prevPointAny == nil {
-		// First data point for this metric, cannot calculate delta
-		return false
+		if point.Int > 0 {
+			datapoint.Sum = float64(point.Int) // ✅ First trace shows as 1
+		} else {
+			datapoint.Sum = point.Double
+		}
+		return true
 	}
 
 	prevPoint, ok := prevPointAny.(*NumberPoint)
@@ -346,8 +358,8 @@ type ProcessorStats struct {
 // Subscribe creates a subscription for realtime metrics
 // Returns a Subscriber that will receive aggregated metrics every 1 second
 // for the specified projectID and flowID combination
-func (p *DatapointProcessor) Subscribe(ctx context.Context, projectID, flowID string) *Subscriber {
-	return p.realtimeAggregator.Subscribe(ctx, projectID, flowID)
+func (p *DatapointProcessor) Subscribe(ctx context.Context, projectID, flowID string, metrics []string) *Subscriber {
+	return p.realtimeAggregator.Subscribe(ctx, projectID, flowID, metrics)
 }
 
 // Unsubscribe removes a subscription and closes its channel

@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"context"
-	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry"
+	"github.com/tiny-systems/otel-collector/pkg/metrics"
 	"sync"
 	"time"
 )
@@ -36,10 +36,17 @@ func (sk SubscriptionKey) matchesDatapoint(projectID, flowID string) bool {
 
 // Subscriber receives aggregated metrics
 type Subscriber struct {
-	Key    SubscriptionKey
-	Ch     chan AggregatedMetric
-	ctx    context.Context
+	Key     SubscriptionKey
+	Ch      chan AggregatedMetric
+	ctx     context.Context
+	Metrics map[string]struct{}
+
 	cancel context.CancelFunc
+}
+
+func (s *Subscriber) hasMetric(metric string) bool {
+	_, ok := s.Metrics[metric]
+	return ok
 }
 
 // RealtimeAggregator aggregates metrics over 1-second windows and distributes to subscribers
@@ -52,9 +59,6 @@ type RealtimeAggregator struct {
 	// Subscribers
 	subscribers map[SubscriptionKey][]*Subscriber
 	subMu       sync.RWMutex
-
-	// Metrics to track
-	trackedMetrics map[string]struct{}
 
 	// Simple limit for cardinality protection
 	maxAggregates int
@@ -90,21 +94,13 @@ func NewRealtimeAggregator() *RealtimeAggregator {
 		windowDuration:    time.Second,
 		currentAggregates: make(map[AggregationKey]*MetricAggregate),
 		subscribers:       make(map[SubscriptionKey][]*Subscriber),
-		trackedMetrics: map[string]struct{}{
-			opentelemetry.MetricSpanErrorCount: {},
-			opentelemetry.MetricTraceCount:     {},
-		},
-		maxAggregates: 10000, // Limit to 10k unique metric combinations per window
+		maxAggregates:     10000, // Limit to 10k unique metric combinations per window
 	}
 	return ra
 }
 
 // AddDatapoint processes a datapoint and aggregates it
 func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
-	// Only track specific metrics
-	if _, tracked := ra.trackedMetrics[dp.Metric]; !tracked {
-		return
-	}
 
 	projectID := dp.Attrs["projectID"]
 	flowID := dp.Attrs["flowID"]
@@ -121,12 +117,29 @@ func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
 	ra.subMu.RLock()
 	// Check for exact match (project + flow)
 	exactKey := SubscriptionKey{ProjectID: projectID, FlowID: flowID}
-	_, hasSubscription = ra.subscribers[exactKey]
+
+	if subs, exists := ra.subscribers[exactKey]; exists {
+		for _, sub := range subs {
+			// If subscriber has no metric filter (empty map), accept all
+			// Otherwise, check if this metric is in the filter
+			if len(sub.Metrics) == 0 || sub.hasMetric(dp.Metric) {
+				hasSubscription = true
+				break
+			}
+		}
+	}
 
 	// Check for project-level subscription (empty flowID)
 	if !hasSubscription {
 		projectKey := SubscriptionKey{ProjectID: projectID, FlowID: ""}
-		_, hasSubscription = ra.subscribers[projectKey]
+		if subs, exists := ra.subscribers[projectKey]; exists {
+			for _, sub := range subs {
+				if len(sub.Metrics) == 0 || sub.hasMetric(dp.Metric) {
+					hasSubscription = true
+					break
+				}
+			}
+		}
 	}
 	ra.subMu.RUnlock()
 
@@ -221,7 +234,7 @@ func (ra *RealtimeAggregator) flushWindow() {
 	for key, agg := range ra.currentAggregates {
 		// Calculate final value based on metric type
 		var finalValue float64
-		if key.Metric == opentelemetry.MetricTraceCount || key.Metric == opentelemetry.MetricSpanErrorCount {
+		if key.Metric == metrics.MetricTraceCount || key.Metric == metrics.MetricSpanErrorCount {
 			// For counters, use sum
 			finalValue = agg.Sum
 		} else {
@@ -250,13 +263,18 @@ func (ra *RealtimeAggregator) flushWindow() {
 		if subs, exists := activeSubscriptions[subKey]; exists {
 			for _, sub := range subs {
 				for _, metric := range metricList {
+					// Filter: only send if subscriber wants this metric
+					if len(sub.Metrics) > 0 && !sub.hasMetric(metric.Metric) {
+						continue // Skip this metric for this subscriber
+					}
+
 					select {
 					case sub.Ch <- metric:
 						ra.totalFlushed++
 					case <-sub.ctx.Done():
-						// Subscriber cancelled, will be cleaned up
+						// Subscriber cancelled
 					default:
-						// Channel full, skip (non-blocking)
+						// Channel full
 						ra.droppedFullChan++
 					}
 				}
@@ -269,17 +287,25 @@ func (ra *RealtimeAggregator) flushWindow() {
 }
 
 // Subscribe creates a new subscription for a project/flow combination
-func (ra *RealtimeAggregator) Subscribe(ctx context.Context, projectID, flowID string) *Subscriber {
+func (ra *RealtimeAggregator) Subscribe(ctx context.Context, projectID, flowID string, metrics []string) *Subscriber {
 	subCtx, cancel := context.WithCancel(ctx)
+
+	metricsFilter := make(map[string]struct{})
+	if len(metrics) > 0 {
+		for _, m := range metrics {
+			metricsFilter[m] = struct{}{}
+		}
+	}
 
 	sub := &Subscriber{
 		Key: SubscriptionKey{
 			ProjectID: projectID,
 			FlowID:    flowID,
 		},
-		Ch:     make(chan AggregatedMetric, 100),
-		ctx:    subCtx,
-		cancel: cancel,
+		Ch:      make(chan AggregatedMetric, 100),
+		ctx:     subCtx,
+		cancel:  cancel,
+		Metrics: metricsFilter,
 	}
 
 	ra.subMu.Lock()
@@ -355,12 +381,14 @@ func (ra *RealtimeAggregator) Unsubscribe(sub *Subscriber) {
 
 // FlushLoop periodically flushes the aggregation window
 func (ra *RealtimeAggregator) FlushLoop(ctx context.Context) {
+
 	ticker := time.NewTicker(ra.windowDuration)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+
 			ra.mu.Lock()
 			ra.flushWindow()
 			ra.currentWindow = time.Now().Truncate(ra.windowDuration)
@@ -414,7 +442,6 @@ func (ra *RealtimeAggregator) GetStats() RealtimeStats {
 		CurrentAggregates:   aggregateCount,
 		MaxAggregates:       ra.maxAggregates,
 		WindowDurationMs:    int(ra.windowDuration.Milliseconds()),
-		TrackedMetricsCount: len(ra.trackedMetrics),
 		TotalEvictions:      totalEvictions,
 		TotalAggregated:     totalAggregated,
 		TotalFlushed:        totalFlushed,
@@ -429,10 +456,10 @@ type RealtimeStats struct {
 	CurrentAggregates   int
 	MaxAggregates       int
 	WindowDurationMs    int
-	TrackedMetricsCount int
-	TotalEvictions      int64
-	TotalAggregated     int64
-	TotalFlushed        int64
-	DroppedNoSub        int64
-	DroppedFullChan     int64
+
+	TotalEvictions  int64
+	TotalAggregated int64
+	TotalFlushed    int64
+	DroppedNoSub    int64
+	DroppedFullChan int64
 }

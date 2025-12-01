@@ -3,11 +3,13 @@ package api;
 option go_package = "./api-go;api";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 import "trace.proto";
 
 message StatisticsStreamRequest {
   string FlowID = 1;
   string ProjectID = 2;
+  repeated string metrics = 3;
 }
 
 message StatisticsStreamResponse {
@@ -30,7 +32,7 @@ message StatisticsGetTracesResponse {
 
 message StatsEvent {
   string Metric = 1;
-  float Value = 2;
+  double Value = 2;
   int64 Datetime = 3;
 }
 
@@ -41,7 +43,6 @@ message Dataset {
 }
 
 
-
 // QueryMetricRequest requests data for a specific metric
 message QueryMetricRequest {
   // Required: Project identifier
@@ -50,8 +51,8 @@ message QueryMetricRequest {
   // Optional: Flow identifier. If empty, aggregates across all flows
   string flow_id = 2;
 
-  // Required: Metric name (e.g., "tiny_span_error_count", "tiny_trace_count")
-  string metric = 3;
+  // Required: Metric names (e.g., "tiny_span_error_count", "tiny_trace_count")
+  repeated string metrics = 3;
 
   // Required: Start of time range
   google.protobuf.Timestamp start_time = 4;
@@ -61,6 +62,8 @@ message QueryMetricRequest {
 
   // Optional: Downsample configuration
   DownsampleConfig downsample = 6;
+
+  google.protobuf.Duration bucket_size = 7;
 }
 
 // DownsampleConfig controls server-side downsampling
@@ -76,23 +79,26 @@ message DownsampleConfig {
 // QueryMetricResponse contains the query result
 message QueryMetricResponse {
   // Metric information
-  string metric = 1;
-  string project_id = 2;
-  string flow_id = 3; // Empty if aggregated across flows
+  string project_id = 1;
+  string flow_id = 2; // Empty if aggregated across flows
 
   // Time range
-  google.protobuf.Timestamp start_time = 4;
-  google.protobuf.Timestamp end_time = 5;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
 
-  // Aggregated statistics
-  MetricStatistics stats = 6;
-
-  // Time series data points
-  repeated DataPoint points = 7;
+  map<string, MetricData> metrics = 5;
 
   // Metadata
-  bool downsampled = 8; // True if downsampling was applied
-  int32 original_point_count = 9; // Original count before downsampling
+  bool downsampled = 6; // True if downsampling was applied
+  int32 original_point_count = 7; // Original count before downsampling
+}
+
+// Metric data structure
+message MetricData {
+  string metric = 1;
+  MetricStatistics stats = 2;
+  repeated DataPoint points = 3;
+  int32 original_point_count = 4;
 }
 
 // MetricStatistics contains aggregated statistics

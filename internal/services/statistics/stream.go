@@ -1,6 +1,7 @@
 package statistics
 
 import (
+	"fmt"
 	"github.com/rs/zerolog/log"
 	"github.com/tiny-systems/otel-collector/pkg/api-go"
 )
@@ -9,7 +10,11 @@ func (s *Service) GetStream(req *api.StatisticsStreamRequest, stream api.Statist
 
 	ctx := stream.Context()
 
-	subscription := s.processor.Subscribe(ctx, req.ProjectID, req.FlowID)
+	if len(req.Metrics) == 0 {
+		return fmt.Errorf("no metrics provided")
+	}
+
+	subscription := s.processor.Subscribe(ctx, req.ProjectID, req.FlowID, req.Metrics)
 	defer s.processor.Unsubscribe(subscription)
 
 	for {
@@ -20,8 +25,8 @@ func (s *Service) GetStream(req *api.StatisticsStreamRequest, stream api.Statist
 				Events: []*api.StatsEvent{
 					{
 						Metric:   m.Metric,
-						Value:    float32(m.Value),
-						Datetime: m.Timestamp.Unix(),
+						Value:    m.Value,
+						Datetime: m.Timestamp.UnixMilli(),
 					},
 				},
 			})

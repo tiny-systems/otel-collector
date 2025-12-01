@@ -158,14 +158,18 @@ func (ts *Storage) removeFromTimeIndex(traceID string) {
 }
 
 // addOrUpdateTrace adds or updates a trace, with automatic FIFO eviction
-func (ts *Storage) addOrUpdateTrace(traceID string, stat *Stat) {
+// Returns true if this is a NEW trace (first time seeing it)
+func (ts *Storage) addOrUpdateTrace(traceID string, stat *Stat) bool {
 	// First, check if we need to evict without holding the main lock
 	needsEviction := false
+	isNewTrace := false
+
 	ts.mu.RLock()
 	if ts.getCurrentMemoryUsage() >= ts.maxMemoryBytes {
 		needsEviction = true
 	}
 	exists := ts.traces[traceID] != nil
+	isNewTrace = !exists
 	ts.mu.RUnlock()
 
 	// Evict oldest traces if needed (without holding main lock)
@@ -234,6 +238,8 @@ func (ts *Storage) addOrUpdateTrace(traceID string, stat *Stat) {
 	if !entryExists {
 		ts.addToTimeIndex(entry)
 	}
+
+	return isNewTrace
 }
 
 // QueryTraces returns traces matching the given criteria with pagination

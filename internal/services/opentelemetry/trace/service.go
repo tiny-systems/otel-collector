@@ -3,10 +3,9 @@ package trace
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
-	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry"
 	"github.com/tiny-systems/otel-collector/internal/services/opentelemetry/metrics"
 	"github.com/tiny-systems/otel-collector/pkg/attrkey"
+	metrics2 "github.com/tiny-systems/otel-collector/pkg/metrics"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -22,6 +21,7 @@ const (
 	payloadAttr       = "payload"
 	flowIDSpanAttr    = "flowID"
 	projectIDSpanAttr = "projectID"
+	metricsAttr       = "metric"
 )
 
 // Stat holds statistics for a trace
@@ -38,16 +38,16 @@ type Stat struct {
 }
 
 func (s Stat) getDataPoints() []*metrics.Datapoint {
-	traces := s.newDatapoint(opentelemetry.MetricTraceCount)
+	traces := s.newDatapoint(metrics2.MetricTraceCount)
 	traces.Sum = 1
 
-	spans := s.newDatapoint(opentelemetry.MetricSpanCount)
+	spans := s.newDatapoint(metrics2.MetricSpanCount)
 	spans.Sum = float64(len(s.spans))
 
-	errors := s.newDatapoint(opentelemetry.MetricSpanErrorCount)
+	errors := s.newDatapoint(metrics2.MetricSpanErrorCount)
 	errors.Sum = float64(s.ErrorCounter)
 
-	data := s.newDatapoint(opentelemetry.MetricSpanDataCount)
+	data := s.newDatapoint(metrics2.MetricSpanDataCount)
 	data.Sum = float64(s.DataCounter)
 
 	return []*metrics.Datapoint{traces, spans, errors, data}
@@ -59,9 +59,9 @@ func (s Stat) newDatapoint(metric string) *metrics.Datapoint {
 	dest.Instrument = metrics.InstrumentCounter
 	dest.Time = time.Now()
 	dest.Attrs = metrics.AttrMap{
-		"flowID":    s.flowID,
-		"projectID": s.projectID,
-		"metric":    metric,
+		flowIDSpanAttr:    s.flowID,
+		projectIDSpanAttr: s.projectID,
+		metricsAttr:       metric,
 	}
 	return dest
 }
@@ -194,13 +194,21 @@ func (s *Service) Export(ctx context.Context, request *collectortracepb.ExportTr
 			continue
 		}
 
-		fmt.Println("add or update trace,", traceID)
-		s.storage.addOrUpdateTrace(traceID, trace)
+		log.Debug().Msgf("add or update trace %s", traceID)
 
-		// Send metrics to metric storage
-		for _, dp := range trace.getDataPoints() {
-			s.handler(ctx, dp)
+		// Returns true if this is a NEW trace (first time we see it)
+		isNewTrace := s.storage.addOrUpdateTrace(traceID, trace)
+
+		// Only send metrics for NEW traces to avoid duplicates
+		if isNewTrace {
+			log.Debug().Str("trace_id", traceID).Msg("new trace - sending metrics")
+			for _, dp := range trace.getDataPoints() {
+				s.handler(ctx, dp)
+			}
+		} else {
+			log.Debug().Str("trace_id", traceID).Msg("existing trace - skipping metrics")
 		}
+
 	}
 
 	return &collectortracepb.ExportTraceServiceResponse{}, nil

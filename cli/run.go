@@ -63,6 +63,10 @@ var runCmd = &cobra.Command{
 		//
 		wg.Go(func() error {
 			dataPointProcessor.ProcessLoop(ctx)
+			return nil
+		})
+
+		wg.Go(func() error {
 			dataPointProcessor.StartRealtimeAggregation(ctx)
 			return nil
 		})

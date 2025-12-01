@@ -58,8 +58,81 @@ type MetricSummary struct {
 	Latest float64 // Most recent value
 }
 
+func (s *Storage) QueryMetricAggregated(ctx context.Context, req QueryRequest, bucketSize time.Duration) (*QueryResult, error) {
+	// First get raw data
+	result, err := s.queryMetric(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result.Points) == 0 {
+		return result, nil
+	}
+
+	// Aggregate into time buckets
+	buckets := make(map[int64]*bucketAggregate)
+
+	for _, p := range result.Points {
+		bucketTime := p.Time.Truncate(bucketSize).Unix()
+
+		bucket, exists := buckets[bucketTime]
+		if !exists {
+			bucket = &bucketAggregate{
+				timestamp: time.Unix(bucketTime, 0),
+				sum:       0,
+				count:     0,
+			}
+			buckets[bucketTime] = bucket
+		}
+
+		bucket.sum += p.Value
+		bucket.count++
+	}
+
+	// Convert buckets to datapoints
+	aggregatedPoints := make([]DataPoint, 0, len(buckets))
+	for _, bucket := range buckets {
+		aggregatedPoints = append(aggregatedPoints, DataPoint{
+			Time:   bucket.timestamp,
+			Value:  bucket.sum,              // Use sum for counters (trace_count, error_count)
+			Labels: result.Points[0].Labels, // Use first point's labels
+		})
+	}
+
+	// Sort by time
+	sort.Slice(aggregatedPoints, func(i, j int) bool {
+		return aggregatedPoints[i].Time.Before(aggregatedPoints[j].Time)
+	})
+
+	// Recalculate stats
+	result.Points = aggregatedPoints
+	result.Count = len(aggregatedPoints)
+	result.Sum = 0
+	result.Min = aggregatedPoints[0].Value
+	result.Max = aggregatedPoints[0].Value
+
+	for _, p := range aggregatedPoints {
+		result.Sum += p.Value
+		if p.Value < result.Min {
+			result.Min = p.Value
+		}
+		if p.Value > result.Max {
+			result.Max = p.Value
+		}
+	}
+	result.Avg = result.Sum / float64(result.Count)
+
+	return result, nil
+}
+
+type bucketAggregate struct {
+	timestamp time.Time
+	sum       float64
+	count     int
+}
+
 // QueryMetric queries a specific metric for a project/flow
-func (s *Storage) QueryMetric(ctx context.Context, req QueryRequest) (*QueryResult, error) {
+func (s *Storage) queryMetric(ctx context.Context, req QueryRequest) (*QueryResult, error) {
 	if req.End.Before(req.Start) {
 		req.End = req.Start
 	}

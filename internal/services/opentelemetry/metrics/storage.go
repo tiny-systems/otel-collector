@@ -316,11 +316,3 @@ type StorageStats struct {
 	PointsPerMetric   int
 	OldestDataMinutes int // How old is the oldest data
 }
-
-// Usage example:
-// storage := NewStorage(1024, 3600)
-// This creates storage with:
-// - 1GB memory limit (estimated)
-// - 3600 points per metric (1 hour at 1 sample/sec)
-// - Automatic FIFO eviction when memory limit is approached
-// - Maintains timeline consistency by evicting oldest metrics first
