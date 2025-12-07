@@ -135,11 +135,11 @@ func (ts *Storage) addToTimeIndex(entry *Entry) {
 
 	ts.timeIndex = append(ts.timeIndex, timeEntry)
 
-	// Keep sorted by startTime for efficient range queries
+	// Keep sorted by startTime (newest first) for efficient range queries
 	// Only sort if we've accumulated enough entries to make it worthwhile
 	if len(ts.timeIndex)%100 == 0 {
 		sort.Slice(ts.timeIndex, func(i, j int) bool {
-			return ts.timeIndex[i].startTime.Before(ts.timeIndex[j].startTime)
+			return ts.timeIndex[i].startTime.After(ts.timeIndex[j].startTime)
 		})
 	}
 }
@@ -267,10 +267,10 @@ func (ts *Storage) QueryTraces(projectID, flowID string, startTime, endTime time
 		limit = 100
 	}
 
-	// First, ensure time index is sorted
+	// First, ensure time index is sorted (newest first)
 	ts.timeIndexMu.Lock()
 	sort.Slice(ts.timeIndex, func(i, j int) bool {
-		return ts.timeIndex[i].startTime.Before(ts.timeIndex[j].startTime)
+		return ts.timeIndex[i].startTime.After(ts.timeIndex[j].startTime)
 	})
 	ts.timeIndexMu.Unlock()
 
