@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (s *Service) GetTraceByID(ctx context.Context, req *api.GetTraceByIDRequest) (*api.GetTraceByIDResponse, error) {
+func (s *Service) GetTraceByID(_ context.Context, req *api.GetTraceByIDRequest) (*api.GetTraceByIDResponse, error) {
 	if req.TraceId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "trace_id is required")
 	}

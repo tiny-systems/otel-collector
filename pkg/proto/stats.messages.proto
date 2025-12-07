@@ -35,6 +35,7 @@ message StatsEvent {
   string Metric = 1;
   double Value = 2;
   int64 Datetime = 3;
+  string Element = 4; // Edge/node/component identifier
 }
 
 message Dataset {

@@ -12,6 +12,7 @@ type AggregatedMetric struct {
 	Metric    string
 	ProjectID string
 	FlowID    string
+	Element   string // Edge/node/component identifier from "element" attribute
 	Timestamp time.Time
 	Value     float64
 }
@@ -77,6 +78,7 @@ type AggregationKey struct {
 	Metric    string
 	ProjectID string
 	FlowID    string
+	Element   string // Edge/node/component identifier from "element" attribute
 }
 
 type MetricAggregate struct {
@@ -166,6 +168,7 @@ func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
 		Metric:    dp.Metric,
 		ProjectID: projectID,
 		FlowID:    flowID,
+		Element:   dp.Attrs["element"],
 	}
 
 	// Simple cardinality protection: reject if at limit and new key
@@ -246,6 +249,7 @@ func (ra *RealtimeAggregator) flushWindow() {
 			Metric:    key.Metric,
 			ProjectID: key.ProjectID,
 			FlowID:    key.FlowID,
+			Element:   key.Element,
 			Timestamp: ra.currentWindow,
 			Value:     finalValue,
 		}

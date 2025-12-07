@@ -269,6 +269,7 @@ type StatsEvent struct {
 	Metric        string                 `protobuf:"bytes,1,opt,name=Metric,proto3" json:"Metric,omitempty"`
 	Value         float64                `protobuf:"fixed64,2,opt,name=Value,proto3" json:"Value,omitempty"`
 	Datetime      int64                  `protobuf:"varint,3,opt,name=Datetime,proto3" json:"Datetime,omitempty"`
+	Element       string                 `protobuf:"bytes,4,opt,name=Element,proto3" json:"Element,omitempty"` // Edge/node/component identifier
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -322,6 +323,13 @@ func (x *StatsEvent) GetDatetime() int64 {
 		return x.Datetime
 	}
 	return 0
+}
+
+func (x *StatsEvent) GetElement() string {
+	if x != nil {
+		return x.Element
+	}
+	return ""
 }
 
 type Dataset struct {
@@ -1503,12 +1511,13 @@ const file_stats_messages_proto_rawDesc = "" +
 	"\x1bStatisticsGetTracesResponse\x12&\n" +
 	"\x06Traces\x18\x01 \x03(\v2\x0e.api.TraceInfoR\x06Traces\x12\x14\n" +
 	"\x05Total\x18\x02 \x01(\x03R\x05Total\x12\x16\n" +
-	"\x06Offset\x18\x03 \x01(\x03R\x06Offset\"V\n" +
+	"\x06Offset\x18\x03 \x01(\x03R\x06Offset\"p\n" +
 	"\n" +
 	"StatsEvent\x12\x16\n" +
 	"\x06Metric\x18\x01 \x01(\tR\x06Metric\x12\x14\n" +
 	"\x05Value\x18\x02 \x01(\x01R\x05Value\x12\x1a\n" +
-	"\bDatetime\x18\x03 \x01(\x03R\bDatetime\"k\n" +
+	"\bDatetime\x18\x03 \x01(\x03R\bDatetime\x12\x18\n" +
+	"\aElement\x18\x04 \x01(\tR\aElement\"k\n" +
 	"\aDataset\x12\x14\n" +
 	"\x05Label\x18\x01 \x01(\tR\x05Label\x12(\n" +
 	"\x0fBackgroundColor\x18\x02 \x01(\tR\x0fBackgroundColor\x12 \n" +

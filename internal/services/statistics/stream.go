@@ -27,6 +27,7 @@ func (s *Service) GetStream(req *api.StatisticsStreamRequest, stream api.Statist
 						Metric:   m.Metric,
 						Value:    m.Value,
 						Datetime: m.Timestamp.UnixMilli(),
+						Element:  m.Element,
 					},
 				},
 			})
