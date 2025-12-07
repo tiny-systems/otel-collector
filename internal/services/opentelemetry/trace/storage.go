@@ -337,6 +337,25 @@ func (ts *Storage) QueryTraces(projectID, flowID string, startTime, endTime time
 	return result
 }
 
+// GetTraceByID retrieves a trace entry by its ID and project ID
+// Returns nil if the trace is not found or doesn't belong to the specified project
+func (ts *Storage) GetTraceByID(traceID, projectID string) *Entry {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	entry, exists := ts.traces[traceID]
+	if !exists {
+		return nil
+	}
+
+	// Verify the trace belongs to the requested project
+	if entry.ProjectID != projectID {
+		return nil
+	}
+
+	return entry
+}
+
 // GetStats returns storage statistics
 func (ts *Storage) GetStats() StorageStats {
 	ts.mu.RLock()

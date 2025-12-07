@@ -16,4 +16,7 @@ service StatisticsService {
 
   // GetAvailableMetrics returns list of available metrics for a project/flow
   rpc GetAvailableMetrics(GetAvailableMetricsRequest) returns (GetAvailableMetricsResponse);
+
+  // GetTraceByID returns complete trace information including all spans by trace ID
+  rpc GetTraceByID(GetTraceByIDRequest) returns (GetTraceByIDResponse);
 }
