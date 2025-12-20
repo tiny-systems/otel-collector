@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"github.com/dgraph-io/ristretto/v2"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -38,17 +37,6 @@ var runCmd = &cobra.Command{
 
 		l.Info().Msg("tinysystems otel gRPC server is starting")
 
-		cache, err := ristretto.NewCache(&ristretto.Config[string, string]{
-			NumCounters: 1e7,     // number of keys to track frequency of (10M).
-			MaxCost:     1 << 30, // maximum cost of cache (1GB).
-			BufferItems: 64,      // number of keys per Get buffer.
-		})
-		if err != nil {
-			l.Fatal().Err(err).Msg("cache set error")
-		}
-
-		_ = cache
-
 		l.Debug().Msgf("debug is enabled")
 
 		server := grpc.NewServer()
@@ -57,7 +45,26 @@ var runCmd = &cobra.Command{
 
 		wg, ctx := errgroup.WithContext(ctx)
 
-		metricsStorage := metrics.NewStorage(512, 3600)
+		metricsStorageMaxMemoryMb := viper.GetInt("metrics_storage_max_memory_mb")
+
+		if metricsStorageMaxMemoryMb == 0 {
+			metricsStorageMaxMemoryMb = 128
+		}
+		pointsPerMetric := viper.GetInt("points_per_metric")
+		if pointsPerMetric == 0 {
+			pointsPerMetric = 3600
+		}
+
+		tracesStorageMaxMemoryMb := viper.GetInt("traces_storage_max_memory_mb")
+		if tracesStorageMaxMemoryMb == 0 {
+			tracesStorageMaxMemoryMb = 128
+		}
+		//
+		l.Info().Msgf("metrics storage max memory: %d", metricsStorageMaxMemoryMb)
+		l.Info().Msgf("traces storage max memory: %d", tracesStorageMaxMemoryMb)
+		l.Info().Msgf("points per metric: %d", pointsPerMetric)
+
+		metricsStorage := metrics.NewStorage(metricsStorageMaxMemoryMb, pointsPerMetric)
 		// processes batches
 		dataPointProcessor := metrics.NewDatapointProcessor(metricsStorage.SaveDataPoints)
 		//
@@ -71,13 +78,12 @@ var runCmd = &cobra.Command{
 			return nil
 		})
 
-		traceStorage := trace.NewTraceStorage(512)
+		traceStorage := trace.NewTraceStorage(tracesStorageMaxMemoryMb)
 
 		traceService := trace.NewService(traceStorage, dataPointProcessor.AddDatapoint)
 
 		//
 		collectormetricspb.RegisterMetricsServiceServer(server, metrics.NewService(dataPointProcessor.AddDatapoint, l))
-
 		//
 		collectortracepb.RegisterTraceServiceServer(server, traceService)
 

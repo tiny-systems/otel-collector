@@ -1,3 +1,7 @@
 debug: true
 
 grpc_listen_address: :2345
+metrics_storage_max_memory_mb: 64
+traces_storage_max_memory_mb: 64
+points_per_metric: 360
+

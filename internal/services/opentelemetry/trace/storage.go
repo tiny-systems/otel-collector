@@ -243,7 +243,7 @@ func (ts *Storage) addOrUpdateTrace(traceID string, stat *Stat) bool {
 			Time("endTime", entry.EndTime).
 			Str("projectID", entry.ProjectID).
 			Str("flowID", entry.FlowID).
-			Msg("New trace added to storage")
+			Msg("new trace added to storage")
 
 		ts.addToTimeIndex(entry)
 	}
@@ -310,7 +310,7 @@ func (ts *Storage) QueryTraces(projectID, flowID string, startTime, endTime time
 		Int("matchingCount", len(matchingIDs)).
 		Int("offset", offset).
 		Int("limit", limit).
-		Msg("QueryTraces executed")
+		Msg("queryTraces executed")
 
 	// Apply offset and limit
 	if offset >= len(matchingIDs) {
