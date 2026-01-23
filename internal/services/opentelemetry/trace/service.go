@@ -136,6 +136,28 @@ func (s *Service) Export(ctx context.Context, request *collectortracepb.ExportTr
 					continue
 				}
 
+				// Calculate span data size for debugging
+				var spanDataSize int
+				for _, event := range span.Events {
+					if event.Name == dataEvent {
+						for _, a := range event.Attributes {
+							if a.Key == payloadAttr {
+								spanDataSize += len(a.Value.GetStringValue())
+							}
+						}
+					}
+				}
+				if spanDataSize > 0 {
+					log.Debug().
+						Str("traceID", traceID).
+						Str("spanName", span.Name).
+						Str("from", from).
+						Str("to", to).
+						Str("port", port).
+						Int("dataSize", spanDataSize).
+						Msg("span with data received")
+				}
+
 				// Get or create stat for this trace
 				trace, ok := traceStats[traceID]
 				if !ok {

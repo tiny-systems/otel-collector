@@ -39,7 +39,11 @@ var runCmd = &cobra.Command{
 
 		l.Debug().Msgf("debug is enabled")
 
-		server := grpc.NewServer()
+		// Increase max message size to 16MB to handle large span payloads
+		server := grpc.NewServer(
+			grpc.MaxRecvMsgSize(16*1024*1024), // 16MB
+			grpc.MaxSendMsgSize(16*1024*1024), // 16MB
+		)
 
 		grpc_health_v1.RegisterHealthServer(server, health.NewChecker())
 
