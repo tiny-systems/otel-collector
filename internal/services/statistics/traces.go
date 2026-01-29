@@ -12,9 +12,7 @@ func (s *Service) GetTraces(ctx context.Context, req *api.StatisticsGetTracesReq
 	if req.ProjectID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "no project id provided")
 	}
-	if req.FlowID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "no flow id provided")
-	}
+	// FlowID is optional - if empty, query all flows in the project
 
 	start := req.Start
 
