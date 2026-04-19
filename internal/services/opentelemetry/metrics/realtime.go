@@ -15,6 +15,7 @@ type AggregatedMetric struct {
 	Element   string // Edge/node/component identifier from "element" attribute
 	Timestamp time.Time
 	Value     float64
+	Labels    map[string]string // Extra OTel attributes (excluding element/projectID/flowID)
 }
 
 // SubscriptionKey uniquely identifies a subscription
@@ -88,6 +89,7 @@ type MetricAggregate struct {
 	Max        float64
 	Last       float64
 	LastUpdate time.Time
+	LastAttrs  map[string]string // Latest non-identity attributes from the most recent datapoint
 }
 
 func NewRealtimeAggregator() *RealtimeAggregator {
@@ -213,7 +215,27 @@ func (ra *RealtimeAggregator) AddDatapoint(dp *Datapoint) {
 
 	agg.Count++
 	agg.LastUpdate = dp.Time
+	agg.LastAttrs = extractLabels(dp.Attrs)
 	ra.totalAggregated++
+}
+
+// extractLabels copies attributes minus identity keys (element/projectID/flowID)
+// which are already carried on the AggregationKey.
+func extractLabels(attrs AttrMap) map[string]string {
+	if len(attrs) == 0 {
+		return nil
+	}
+	var labels map[string]string
+	for k, v := range attrs {
+		if k == "element" || k == "projectID" || k == "flowID" {
+			continue
+		}
+		if labels == nil {
+			labels = make(map[string]string, len(attrs))
+		}
+		labels[k] = v
+	}
+	return labels
 }
 
 // flushWindow sends aggregated metrics to subscribers
@@ -252,6 +274,7 @@ func (ra *RealtimeAggregator) flushWindow() {
 			Element:   key.Element,
 			Timestamp: ra.currentWindow,
 			Value:     finalValue,
+			Labels:    agg.LastAttrs,
 		}
 
 		// Send to all matching subscriptions

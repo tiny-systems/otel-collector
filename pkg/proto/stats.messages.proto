@@ -36,6 +36,7 @@ message StatsEvent {
   double Value = 2;
   int64 Datetime = 3;
   string Element = 4; // Edge/node/component identifier
+  map<string, string> Labels = 5; // Extra OTel attributes (excluding element/projectID/flowID)
 }
 
 message Dataset {
